@@ -1,6 +1,7 @@
 # model settings
 norm_cfg = dict(type='SyncBN', requires_grad=True)
 data_preprocessor = dict(
+    _scope_='mmseg',
     type='SegDataPreProcessor',
     mean=[123.675, 116.28, 103.53],
     std=[58.395, 57.12, 57.375],
@@ -35,4 +36,5 @@ model = dict(
             type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0)),
     # model training and testing settings
     train_cfg=dict(),
-    test_cfg=dict(mode='whole'))
+    test_cfg=dict(mode='whole')
+)

@@ -9,7 +9,7 @@ vis_backends = [
     dict(
         type='WandbVisBackend',
         init_kwargs=dict(
-            project='mmsegmentation', name='expname'),
+            project='mmsegmentation', name='psa'),
         define_metric_cfg=dict(mDice='max'))
 ]
 visualizer = dict(
