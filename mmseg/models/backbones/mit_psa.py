@@ -16,6 +16,7 @@ from ..utils import PatchEmbed, nlc_to_nchw, nchw_to_nlc
 
 from .mit import MixFFN
 from ..utils.PSA import PSA_p
+from ..utils.inverted_residual import InvertedResidual
 
 class PSAAttention(nn.Module):
     def __init__(self,
@@ -27,30 +28,67 @@ class PSAAttention(nn.Module):
         self.psa_module = PSA_p(inplanes=embed_dims,
                                 planes=embed_dims)
 
-    def forward(self, x, hw_shape, identity=None):
+    def forward(self, x, hw_shape):
         x = nlc_to_nchw(x, hw_shape)
         ex_out = nchw_to_nlc(self.psa_module(x))
 
         return self.dropout_layer(ex_out)
 
-class ExTransformerEncoderLayer(BaseModule):
+class PSATransformerEncoderLayer(BaseModule):
+    """Implements one encoder layer in Segformer.
+
+    Args:
+        embed_dims (int): The feature dimension.
+        num_heads (int): Parallel attention heads.
+        feedforward_channels (int): The hidden dimension for FFNs.
+        drop_rate (float): Probability of an element to be zeroed.
+            after the feed forward layer. Default 0.0.
+        attn_drop_rate (float): The drop out rate for attention layer.
+            Default 0.0.
+        drop_path_rate (float): stochastic depth rate. Default 0.0.
+        qkv_bias (bool): enable bias for qkv if True.
+            Default: True.
+        act_cfg (dict): The activation config for FFNs.
+            Default: dict(type='GELU').
+        norm_cfg (dict): Config dict for normalization layer.
+            Default: dict(type='LN').
+        batch_first (bool): Key, Query and Value are shape of
+            (batch, n, embed_dim)
+            or (n, batch, embed_dim). Default: False.
+        init_cfg (dict, optional): Initialization config dict.
+            Default:None.
+        sr_ratio (int): The ratio of spatial reduction of Efficient Multi-head
+            Attention of Segformer. Default: 1.
+        with_cp (bool): Use checkpoint or not. Using checkpoint will save
+            some memory while slowing down the training speed. Default: False.
+    """
+
     def __init__(self,
+                 index,
                  embed_dims,
                  feedforward_channels,
                  drop_rate=0.,
                  drop_path_rate=0.,
                  act_cfg=dict(type='GELU'),
-                 norm_cfg=dict(type='LN'),
+                 norm_cfg=dict(type='LN', eps=1e-6),
                  with_cp=False):
-        super(ExTransformerEncoderLayer, self).__init__()
+        super(PSATransformerEncoderLayer, self).__init__()
 
         # The ret[0] of build_norm_layer is norm name.
         self.norm1 = build_norm_layer(norm_cfg, embed_dims)[1]
-
-        self.attn = PSAAttention(
-            embed_dims=embed_dims,
-            dropout_layer=dict(type='DropPath', drop_prob=drop_path_rate),
-            norm_cfg=norm_cfg)
+        self.index = index
+        if index < 2:
+            self.attn = InvertedResidual(
+                in_channels=embed_dims,
+                out_channels=embed_dims,
+                stride=1,
+                expand_ratio=2,
+                act_cfg=act_cfg)
+        else:
+            self.attn = PSAAttention(
+                embed_dims=embed_dims,
+                dropout_layer=dict(type='DropPath', drop_prob=drop_path_rate),
+                norm_cfg=norm_cfg)
 
         # The ret[0] of build_norm_layer is norm name.
         self.norm2 = build_norm_layer(norm_cfg, embed_dims)[1]
@@ -67,7 +105,12 @@ class ExTransformerEncoderLayer(BaseModule):
     def forward(self, x, hw_shape):
 
         def _inner_forward(x):
-            x = self.attn(self.norm1(x), hw_shape, identity=x)
+            if self.index < 2:
+                x = nlc_to_nchw(self.norm1(x), hw_shape)
+                x = self.attn(x)
+                x = nchw_to_nlc(x)
+            else:
+                x = self.attn(self.norm1(x), hw_shape)
             x = self.ffn(self.norm2(x), hw_shape, identity=x)
             return x
 
@@ -137,7 +180,8 @@ class PSAMixVisionTransformer(BaseModule):
                 padding=patch_sizes[i] // 2,
                 norm_cfg=norm_cfg)
             layer = ModuleList([
-                ExTransformerEncoderLayer(
+                PSATransformerEncoderLayer(
+                    index=i,
                     embed_dims=embed_dims_i,
                     feedforward_channels=mlp_ratio * embed_dims_i,
                     drop_rate=drop_rate,

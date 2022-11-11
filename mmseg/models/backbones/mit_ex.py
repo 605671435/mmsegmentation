@@ -17,7 +17,8 @@ from ..utils import PatchEmbed, nlc_to_nchw, nchw_to_nlc
 from .mit import MixFFN
 from ..utils.ex_attention import EX_Module
 from ..utils.inverted_residual import InvertedResidual
-
+from ..utils.PSA import PSA_p
+from ..utils.se_layer import SELayer
 class ExAttention(nn.Module):
     def __init__(self,
                  embed_dims,
@@ -32,6 +33,37 @@ class ExAttention(nn.Module):
     def forward(self, x, hw_shape):
         x = nlc_to_nchw(x, hw_shape)
         ex_out = nchw_to_nlc(self.ex_module(x))
+
+        return self.dropout_layer(ex_out)
+
+class PSAAttention(nn.Module):
+    def __init__(self,
+                 embed_dims,
+                 dropout_layer=None,
+                 norm_cfg=dict(type='LN')):
+        super(PSAAttention, self).__init__()
+        self.dropout_layer = build_dropout(dropout_layer)
+        self.psa_module = PSA_p(inplanes=embed_dims,
+                                planes=embed_dims)
+
+    def forward(self, x, hw_shape):
+        x = nlc_to_nchw(x, hw_shape)
+        ex_out = nchw_to_nlc(self.psa_module(x))
+
+        return self.dropout_layer(ex_out)
+
+class SEAttention(nn.Module):
+    def __init__(self,
+                 embed_dims,
+                 dropout_layer=None,
+                 norm_cfg=dict(type='LN')):
+        super(SEAttention, self).__init__()
+        self.dropout_layer = build_dropout(dropout_layer)
+        self.se_layer = SELayer(channels=embed_dims)
+
+    def forward(self, x, hw_shape):
+        x = nlc_to_nchw(x, hw_shape)
+        ex_out = nchw_to_nlc(self.se_layer(x))
 
         return self.dropout_layer(ex_out)
 
@@ -67,6 +99,7 @@ class ExTransformerEncoderLayer(BaseModule):
     def __init__(self,
                  index,
                  embed_dims,
+                 token_mixer,
                  feedforward_channels,
                  drop_rate=0.,
                  drop_path_rate=0.,
@@ -79,14 +112,14 @@ class ExTransformerEncoderLayer(BaseModule):
         self.norm1 = build_norm_layer(norm_cfg, embed_dims)[1]
         self.index = index
         if index < 2:
-            self.attn = InvertedResidual(
+            self.tokenmixer = InvertedResidual(
                 in_channels=embed_dims,
                 out_channels=embed_dims,
                 stride=1,
                 expand_ratio=2,
                 act_cfg=act_cfg)
         else:
-            self.attn = ExAttention(
+            self.tokenmixer = token_mixer(
                 embed_dims=embed_dims,
                 dropout_layer=dict(type='DropPath', drop_prob=drop_path_rate),
                 norm_cfg=norm_cfg)
@@ -108,10 +141,10 @@ class ExTransformerEncoderLayer(BaseModule):
         def _inner_forward(x):
             if self.index < 2:
                 x = nlc_to_nchw(self.norm1(x), hw_shape)
-                x = self.attn(x)
+                x = self.tokenmixer(x)
                 x = nchw_to_nlc(x)
             else:
-                x = self.attn(self.norm1(x), hw_shape)
+                x = self.tokenmixer(self.norm1(x), hw_shape)
             x = self.ffn(self.norm2(x), hw_shape, identity=x)
             return x
 
@@ -127,6 +160,7 @@ class ExMixVisionTransformer(BaseModule):
     def __init__(self,
                  in_channels=3,
                  embed_dims=64,
+                 token_mixers=ExAttention,
                  num_stages=4,
                  num_layers=[3, 4, 6, 3],
                  num_heads=[1, 2, 4, 8],
@@ -184,6 +218,7 @@ class ExMixVisionTransformer(BaseModule):
                 ExTransformerEncoderLayer(
                     index=i,
                     embed_dims=embed_dims_i,
+                    token_mixer=token_mixers,
                     feedforward_channels=mlp_ratio * embed_dims_i,
                     drop_rate=drop_rate,
                     drop_path_rate=dpr[cur + idx],
@@ -226,3 +261,17 @@ class ExMixVisionTransformer(BaseModule):
                 outs.append(x)
 
         return outs
+
+@MODELS.register_module()
+class PSAFormer(ExMixVisionTransformer):
+    def __init__(self, **kwargs):
+        super(PSAFormer, self).__init__(
+            token_mixers=PSAAttention,
+            **kwargs)
+
+@MODELS.register_module()
+class SEFormer(ExMixVisionTransformer):
+    def __init__(self, **kwargs):
+        super(SEFormer, self).__init__(
+            token_mixers=SEAttention,
+            **kwargs)

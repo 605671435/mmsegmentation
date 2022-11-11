@@ -6,7 +6,6 @@ from mmengine import Config
 
 from mmseg.models import build_segmentor
 
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Get the FLOPs of a segmentor')
@@ -15,7 +14,7 @@ def parse_args():
         '--shape',
         type=int,
         nargs='+',
-        default=[2048, 1024],
+        default=[1024, 1024],
         help='input image size')
     args = parser.parse_args()
     return args
@@ -34,6 +33,8 @@ def main():
 
     cfg = Config.fromfile(args.config)
     cfg.model.pretrained = None
+    cfg.model.train_cfg = None
+    cfg.model.test_cfg = None
     model = build_segmentor(
         cfg.model,
         train_cfg=cfg.get('train_cfg'),

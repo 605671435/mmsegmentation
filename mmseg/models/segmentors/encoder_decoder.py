@@ -9,7 +9,7 @@ from mmseg.registry import MODELS
 from mmseg.utils import (ConfigType, OptConfigType, OptMultiConfig,
                          OptSampleList, SampleList, add_prefix)
 from .base import BaseSegmentor
-
+from ..utils import resize
 
 @MODELS.register_module()
 class EncoderDecoder(BaseSegmentor):
@@ -219,6 +219,17 @@ class EncoderDecoder(BaseSegmentor):
 
         return self.postprocess_result(seg_logits, data_samples)
 
+    def forward_dummy(self, img):
+        """Dummy forward function."""
+
+        x = self.extract_feat(img)
+        out = self.decode_head.forward(x)
+        out = resize(
+            input=out,
+            size=img.shape[2:],
+            mode='bilinear',
+            align_corners=self.align_corners)
+        return out
     def _forward(self,
                  inputs: Tensor,
                  data_samples: OptSampleList = None) -> Tensor:

@@ -3,17 +3,12 @@ _base_ = [
     '../_base_/datasets/hrf_1024x1024.py',
     '../_base_/default_runtime.py', '../_base_/schedules/schedule_160k.py'
 ]
-checkpoint = 'https://download.openmmlab.com/mmsegmentation/v0.5/pretrain/segformer/mit_b2_20220624-66e8bf70.pth'  # noqa
 
 crop_size = (1024, 1024)
 data_preprocessor = dict(size=crop_size)
 model = dict(
     data_preprocessor=data_preprocessor,
-    backbone=dict(
-        init_cfg=dict(type='Pretrained', checkpoint=checkpoint),
-        embed_dims=64,
-        num_layers=[3, 4, 6, 3]),
-    decode_head=dict(in_channels=[64, 128, 320, 512],
+    decode_head=dict(num_classes=2,
                      loss_decode=[
                          dict(type='CrossEntropyLoss', loss_name='loss_ce', loss_weight=1.0),
                          dict(type='DiceLoss', loss_name='loss_dice', loss_weight=3.0)]),
@@ -47,3 +42,14 @@ param_scheduler = [
 train_dataloader = dict(batch_size=1, num_workers=4)
 val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
+
+vis_backends = [
+    dict(type='LocalVisBackend'),
+    dict(
+        type='WandbVisBackend',
+        init_kwargs=dict(
+            project='mmsegmentation', name='ex-160k'),
+        define_metric_cfg=dict(mDice='max'))
+]
+visualizer = dict(
+    type='SegLocalVisualizer', vis_backends=vis_backends, name='visualizer')
