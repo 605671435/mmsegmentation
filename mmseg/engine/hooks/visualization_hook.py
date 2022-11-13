@@ -9,11 +9,11 @@ import torch
 from mmengine.fileio import FileClient
 from mmengine.hooks import Hook
 from mmengine.runner import Runner
-
+from mmengine.dist import master_only
 from mmseg.registry import HOOKS
 from mmseg.structures import SegDataSample
 from mmseg.visualization import SegLocalVisualizer
-from mmseg.evaluation.metrics.iou_metric import IoUMetric
+
 @HOOKS.register_module()
 class SegVisualizationHook(Hook):
     """Segmentation Visualization Hook. Used to visualize validation and
@@ -66,6 +66,7 @@ class SegVisualizationHook(Hook):
                           'effect. The results will NOT be '
                           'visualized or stored.')
 
+    @master_only
     def _after_iter(self,
                     runner: Runner,
                     batch_idx: int,
@@ -102,13 +103,6 @@ class SegVisualizationHook(Hook):
                     wait_time=self.wait_time,
                     step=runner.iter)
 
-    def before_val(self, runner) -> None:
-        if self.draw_table:
-            vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
-            columns = ["id", "image", "gt", "pred", "dice", "acc"]
-            self.wandb = vis_backend.experiment
-            self.test_table = self.wandb.Table(columns=columns)
-
     def compute_metric(self, pred_sem_seg, gt_sem_seg, num_classes):
         intersect = pred_sem_seg[pred_sem_seg == gt_sem_seg]
         area_intersect = torch.histc(
@@ -128,38 +122,65 @@ class SegVisualizationHook(Hook):
 
         return np.round(dice.numpy() * 100, 2), np.round(acc.numpy() * 100, 2)
 
+    @master_only
+    def before_run(self, runner) -> None:
+        if self.draw_table is True:
+            vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
+            wandb = vis_backend.experiment
+            columns = ["id", "image", "gt", "pred", "dice", "acc"]
+            print('INFO***create a wandb table***INFO')
+            self.test_table = wandb.Table(columns=columns)
+            classes = runner.train_dataloader.dataset.METAINFO['classes']
+            num_classes = len(classes)
+            class_id = list(range(num_classes - 1)) + [255]
+            self.class_set = wandb.Classes([{'name': name, 'id': id}
+                                       for name, id in zip(classes, class_id)])
+
+    @master_only
     def after_val_iter(self,
                        runner,
                        batch_idx: int,
                        data_batch: dict,
                        outputs) -> None:
+        if self.draw_table is True and self.every_n_inner_iters(batch_idx, self.interval):
+            for output in outputs:
+                vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
+                wandb = vis_backend.experiment
+                classes = runner.train_dataloader.dataset.METAINFO['classes']
+                # palette = runner.train_dataloader.dataset.METAINFO['palette']
+                num_classes = len(classes)
+                img_path = output.img_path.split('/')[-1].split('.')[0]
+                ori_img = data_batch['inputs'][0].permute(1, 2, 0).cpu().numpy().astype('uint8')
 
-        classes = runner.train_dataloader.dataset.METAINFO['classes']
-        num_classes = len(classes)
-        # palette = runner.train_dataloader.dataset.METAINFO['palette']
-        if self.every_n_inner_iters(batch_idx, self.interval):
+                gt_sem_seg = output.gt_sem_seg.data.cpu().permute(1, 2, 0).numpy().astype('uint8') * 255
+                gt_sem_seg = mmcv.imresize(gt_sem_seg[..., -1],
+                                           (ori_img.shape[1], ori_img.shape[0]),
+                                           interpolation='nearest',
+                                           backend='pillow')
+                pred_sem_seg = output.pred_sem_seg.data.cpu().permute(1, 2, 0).numpy().astype('uint8') * 255
+                pred_sem_seg = mmcv.imresize(pred_sem_seg[..., -1],
+                                             (ori_img.shape[1], ori_img.shape[0]),
+                                             interpolation='nearest',
+                                             backend='pillow')
 
-            img_path = outputs[0].img_path.split('/')[-1]
-            ori_img = data_batch['inputs'][0].permute(1, 2, 0).cpu().numpy()
-            gt_sem_seg = outputs[0].gt_sem_seg.data.cpu().numpy() * 255
-            pred_sem_seg = outputs[0].pred_sem_seg.data.cpu().numpy()
-            pred_sem_seg = pred_sem_seg * 255
+                dice, acc = self.compute_metric(outputs[0].pred_sem_seg.data, outputs[0].gt_sem_seg.data, num_classes)
 
-            dice, acc = self.compute_metric(outputs[0].pred_sem_seg.data, outputs[0].gt_sem_seg.data, num_classes)
+                annotated = wandb.Image(ori_img, classes=self.class_set,
+                                        masks={"ground_truth": {"mask_data": gt_sem_seg}})
+                predicted = wandb.Image(ori_img, classes=self.class_set,
+                                        masks={"predicted_mask": {"mask_data": pred_sem_seg}})
+                print('INFO***add data to tabel***INFO')
+                self.test_table.add_data(img_path,
+                                         wandb.Image(ori_img),
+                                         annotated,
+                                         predicted,
+                                         "{}:{}, {}:{}".format(classes[0], dice[0], classes[1], dice[1]),
+                                         "{}:{}, {}:{}".format(classes[0], acc[0], classes[1], acc[1]))
 
-            self.test_table.add_data(img_path,
-                                     self.wandb.Image(ori_img, caption='abc'),
-                                     self.wandb.Image(gt_sem_seg),
-                                     self.wandb.Image(pred_sem_seg),
-                                     "{}:{}, {}:{}".format(classes[0], dice[0], classes[1], dice[1]),
-                                     "{}:{}, {}:{}".format(classes[0], acc[0], classes[1], acc[1]))
-            self.wandb.log({"test_predictions": self.test_table})
-            # vis_backend.add_image('image', ori_img)
-            # vis_backend.add_image('image', gt_sem_seg)
-            # vis_backend.add_image('image', pred_sem_seg)
-        # self._visualizer
-        # for vis_backend in self._vis_backends.values():
-        #     vis_backend.add_scalars(scalar_dict, step, file_path, **kwargs)
-        # runner.visualizer.add_scalars(
-        #     tag, step=runner.iter, file_path=self.json_log_path)
-        # #self._visualizer.add_image('image', data_batch)
+    @master_only
+    def after_run(self, runner) -> None:
+        if self.draw_table is True:
+            vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
+            wandb = vis_backend.experiment
+            print('INFO***log table to wandb***INFO')
+            wandb.log({"test_predictions": self.test_table})
