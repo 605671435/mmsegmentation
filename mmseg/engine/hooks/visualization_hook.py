@@ -3,7 +3,9 @@ import os.path as osp
 import warnings
 from typing import Sequence
 
+import numpy as np
 import mmcv
+import torch
 from mmengine.fileio import FileClient
 from mmengine.hooks import Hook
 from mmengine.runner import Runner
@@ -11,8 +13,7 @@ from mmengine.runner import Runner
 from mmseg.registry import HOOKS
 from mmseg.structures import SegDataSample
 from mmseg.visualization import SegLocalVisualizer
-
-
+from mmseg.evaluation.metrics.iou_metric import IoUMetric
 @HOOKS.register_module()
 class SegVisualizationHook(Hook):
     """Segmentation Visualization Hook. Used to visualize validation and
@@ -36,6 +37,7 @@ class SegVisualizationHook(Hook):
     """
 
     def __init__(self,
+                 draw_table: bool = False,
                  draw: bool = False,
                  interval: int = 50,
                  show: bool = False,
@@ -57,6 +59,7 @@ class SegVisualizationHook(Hook):
         self.file_client_args = file_client_args.copy()
         self.file_client = None
         self.draw = draw
+        self.draw_table = draw_table
         if not self.draw:
             warnings.warn('The draw is False, it means that the '
                           'hook for visualization will not take '
@@ -98,3 +101,65 @@ class SegVisualizationHook(Hook):
                     show=self.show,
                     wait_time=self.wait_time,
                     step=runner.iter)
+
+    def before_val(self, runner) -> None:
+        if self.draw_table:
+            vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
+            columns = ["id", "image", "gt", "pred", "dice", "acc"]
+            self.wandb = vis_backend.experiment
+            self.test_table = self.wandb.Table(columns=columns)
+
+    def compute_metric(self, pred_sem_seg, gt_sem_seg, num_classes):
+        intersect = pred_sem_seg[pred_sem_seg == gt_sem_seg]
+        area_intersect = torch.histc(
+            intersect.float(), bins=(num_classes), min=0,
+            max=num_classes - 1).cpu()
+        area_pred_label = torch.histc(
+            pred_sem_seg.float(), bins=(num_classes), min=0,
+            max=num_classes - 1).cpu()
+        area_label = torch.histc(
+            gt_sem_seg.float(), bins=(num_classes), min=0,
+            max=num_classes - 1).cpu()
+        # area_union = area_pred_label + area_label - area_intersect
+
+        dice = 2 * area_intersect / (
+                area_pred_label + area_label)
+        acc = area_intersect / area_label
+
+        return np.round(dice.numpy() * 100, 2), np.round(acc.numpy() * 100, 2)
+
+    def after_val_iter(self,
+                       runner,
+                       batch_idx: int,
+                       data_batch: dict,
+                       outputs) -> None:
+
+        classes = runner.train_dataloader.dataset.METAINFO['classes']
+        num_classes = len(classes)
+        # palette = runner.train_dataloader.dataset.METAINFO['palette']
+        if self.every_n_inner_iters(batch_idx, self.interval):
+
+            img_path = outputs[0].img_path.split('/')[-1]
+            ori_img = data_batch['inputs'][0].permute(1, 2, 0).cpu().numpy()
+            gt_sem_seg = outputs[0].gt_sem_seg.data.cpu().numpy() * 255
+            pred_sem_seg = outputs[0].pred_sem_seg.data.cpu().numpy()
+            pred_sem_seg = pred_sem_seg * 255
+
+            dice, acc = self.compute_metric(outputs[0].pred_sem_seg.data, outputs[0].gt_sem_seg.data, num_classes)
+
+            self.test_table.add_data(img_path,
+                                     self.wandb.Image(ori_img, caption='abc'),
+                                     self.wandb.Image(gt_sem_seg),
+                                     self.wandb.Image(pred_sem_seg),
+                                     "{}:{}, {}:{}".format(classes[0], dice[0], classes[1], dice[1]),
+                                     "{}:{}, {}:{}".format(classes[0], acc[0], classes[1], acc[1]))
+            self.wandb.log({"test_predictions": self.test_table})
+            # vis_backend.add_image('image', ori_img)
+            # vis_backend.add_image('image', gt_sem_seg)
+            # vis_backend.add_image('image', pred_sem_seg)
+        # self._visualizer
+        # for vis_backend in self._vis_backends.values():
+        #     vis_backend.add_scalars(scalar_dict, step, file_path, **kwargs)
+        # runner.visualizer.add_scalars(
+        #     tag, step=runner.iter, file_path=self.json_log_path)
+        # #self._visualizer.add_image('image', data_batch)
