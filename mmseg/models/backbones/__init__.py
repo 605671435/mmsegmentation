@@ -20,9 +20,10 @@ from .timm_backbone import TIMMBackbone
 from .twins import PCPVT, SVT
 from .unet import UNet
 from .vit import VisionTransformer
-from .mit_ex import ExMixVisionTransformer, PSAFormer, SEFormer, ExFormer_NoSelf
+from .mit_ex import ExMixVisionTransformer, PSAFormer, SEFormer, ExFormer_NoSelf, ExFormer_NoSlct_Seq, ExFormer_NoSlct_Par
 from .mit_psa import PSAMixVisionTransformer
 from .metaformer import MetaFormer, CAFormer_s18
+from .exunet import ExUNet
 
 __all__ = [
     'ResNet', 'ResNetV1c', 'ResNetV1d', 'ResNeXt', 'HRNet', 'FastSCNN',
@@ -30,5 +31,5 @@ __all__ = [
     'VisionTransformer', 'SwinTransformer', 'MixVisionTransformer',
     'BiSeNetV1', 'BiSeNetV2', 'ICNet', 'TIMMBackbone', 'ERFNet', 'PCPVT',
     'SVT', 'STDCNet', 'STDCContextPathNet', 'BEiT', 'MAE', 'ExMixVisionTransformer', 'PSAMixVisionTransformer',
-    'MetaFormer', 'CAFormer_s18', 'PSAFormer', 'SEFormer', 'ExFormer_NoSelf'
+    'MetaFormer', 'CAFormer_s18', 'PSAFormer', 'SEFormer', 'ExFormer_NoSelf', 'ExFormer_NoSlct_Seq', 'ExFormer_NoSlct_Par', 'ExUNet'
 ]

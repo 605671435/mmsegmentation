@@ -42,6 +42,7 @@ class PSAAttention(nn.Module):
     def __init__(self,
                  embed_dims,
                  dropout_layer=None,
+                 ex_module=None,
                  norm_cfg=dict(type='LN')):
         super(PSAAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
@@ -58,6 +59,7 @@ class SEAttention(nn.Module):
     def __init__(self,
                  embed_dims,
                  dropout_layer=None,
+                 ex_module=None,
                  norm_cfg=dict(type='LN')):
         super(SEAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
@@ -273,6 +275,7 @@ class PSAFormer(ExMixVisionTransformer):
     def __init__(self, **kwargs):
         super(PSAFormer, self).__init__(
             token_mixers=PSAAttention,
+            ex_module=None,
             **kwargs)
 
 @MODELS.register_module()
@@ -280,6 +283,7 @@ class SEFormer(ExMixVisionTransformer):
     def __init__(self, **kwargs):
         super(SEFormer, self).__init__(
             token_mixers=SEAttention,
+            ex_module=None,
             **kwargs)
 
 @MODELS.register_module()
@@ -287,4 +291,18 @@ class ExFormer_NoSelf(ExMixVisionTransformer):
     def __init__(self, **kwargs):
         super(ExFormer_NoSelf, self).__init__(
             ex_module=EX_Module_noself,
+            **kwargs)
+
+@MODELS.register_module()
+class ExFormer_NoSlct_Seq(ExMixVisionTransformer):
+    def __init__(self, **kwargs):
+        super(ExFormer_NoSlct_Seq, self).__init__(
+            ex_module=EX_Module_noselect_seq,
+            **kwargs)
+
+@MODELS.register_module()
+class ExFormer_NoSlct_Par(ExMixVisionTransformer):
+    def __init__(self, **kwargs):
+        super(ExFormer_NoSlct_Par, self).__init__(
+            ex_module=EX_Module_noselect_par,
             **kwargs)

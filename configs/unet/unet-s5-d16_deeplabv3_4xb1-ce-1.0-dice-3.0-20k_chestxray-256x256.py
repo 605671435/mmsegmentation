@@ -11,6 +11,8 @@ model = dict(
             dict(type='DiceLoss', loss_name='loss_dice', loss_weight=3.0)]),
     test_cfg=dict(crop_size=(256, 256), stride=(170, 170)))
 
+train_dataloader = dict(batch_size=2, num_workers=8)
+
 default_hooks = dict(
     visualization=dict(type='SegVisualizationHook', draw_table=True))
 

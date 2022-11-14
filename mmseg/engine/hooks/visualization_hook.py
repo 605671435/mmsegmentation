@@ -124,14 +124,17 @@ class SegVisualizationHook(Hook):
 
     @master_only
     def before_run(self, runner) -> None:
-        self._visualizer.add_config(runner.cfg)
+        # self._visualizer.add_config(runner.cfg)
         if self.draw_table is True:
             vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
             wandb = vis_backend.experiment
             columns = ["id", "image", "gt", "pred", "dice", "acc"]
             print('INFO***create a wandb table***INFO')
             self.test_table = wandb.Table(columns=columns)
-            classes = runner.train_dataloader.dataset.METAINFO['classes']
+            if hasattr(runner.train_dataloader.dataset, 'METAINFO'):
+                classes = runner.train_dataloader.dataset.METAINFO['classes']
+            else:
+                classes = runner.train_dataloader.dataset.metainfo['classes']
             num_classes = len(classes)
             class_id = list(range(num_classes - 1)) + [255]
             self.class_set = wandb.Classes([{'name': name, 'id': id}
