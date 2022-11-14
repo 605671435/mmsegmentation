@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/models/segformer_mit-ex-b2.py',
     '../_base_/datasets/chestxray_256x256.py',
-    '../_base_/default_runtime.py', '../_base_/schedules/schedule_20k.py'
+    '../_base_/default_runtime.py', '../_base_/schedules/schedule_80k.py'
 ]
 
 crop_size = (256, 256)
@@ -49,7 +49,7 @@ param_scheduler = [
         eta_min=0.0,
         power=1.0,
         begin=1500,
-        end=20000,
+        end=80000,
         by_epoch=False,
     )
 ]
@@ -66,7 +66,7 @@ vis_backends = [
     dict(
         type='WandbVisBackend',
         init_kwargs=dict(
-            project='chest X-rays', name='ex-20k'),
+            project='chest X-rays', name='ex-80k'),
         define_metric_cfg=dict(mDice='max'))
 ]
 visualizer = dict(

@@ -172,6 +172,7 @@ class EX_Module_noself(nn.Module):
             kernel_size=1)
         if norm_cfg is not None:
             self.norm = build_norm_layer(norm_cfg, in_channels)[1]
+        self.sk_module = SK_Module(in_channels=in_channels)
 
     def channel_attention(self, x):
         # channel attention

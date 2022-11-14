@@ -20,7 +20,7 @@ from .timm_backbone import TIMMBackbone
 from .twins import PCPVT, SVT
 from .unet import UNet
 from .vit import VisionTransformer
-from .mit_ex import ExMixVisionTransformer, PSAFormer, SEFormer
+from .mit_ex import ExMixVisionTransformer, PSAFormer, SEFormer, ExFormer_NoSelf
 from .mit_psa import PSAMixVisionTransformer
 from .metaformer import MetaFormer, CAFormer_s18
 
@@ -30,5 +30,5 @@ __all__ = [
     'VisionTransformer', 'SwinTransformer', 'MixVisionTransformer',
     'BiSeNetV1', 'BiSeNetV2', 'ICNet', 'TIMMBackbone', 'ERFNet', 'PCPVT',
     'SVT', 'STDCNet', 'STDCContextPathNet', 'BEiT', 'MAE', 'ExMixVisionTransformer', 'PSAMixVisionTransformer',
-    'MetaFormer', 'CAFormer_s18', 'PSAFormer', 'SEFormer'
+    'MetaFormer', 'CAFormer_s18', 'PSAFormer', 'SEFormer', 'ExFormer_NoSelf'
 ]

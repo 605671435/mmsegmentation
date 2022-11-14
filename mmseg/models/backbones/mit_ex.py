@@ -15,18 +15,20 @@ from mmseg.registry import MODELS
 from ..utils import PatchEmbed, nlc_to_nchw, nchw_to_nlc
 
 from .mit import MixFFN
-from ..utils.ex_attention import EX_Module
+from ..utils.ex_attention import EX_Module, EX_Module_noself, EX_Module_noselect_par, EX_Module_noselect_seq
 from ..utils.inverted_residual import InvertedResidual
 from ..utils.PSA import PSA_p
 from ..utils.se_layer import SELayer
+
 class ExAttention(nn.Module):
     def __init__(self,
                  embed_dims,
                  dropout_layer=None,
+                 ex_module=EX_Module,
                  norm_cfg=dict(type='LN', eps=1e-6)):
         super(ExAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
-        self.ex_module = EX_Module(in_channels=embed_dims,
+        self.ex_module = ex_module(in_channels=embed_dims,
                                    channels=embed_dims,
                                    norm_cfg=norm_cfg)
 
@@ -101,6 +103,7 @@ class ExTransformerEncoderLayer(BaseModule):
                  embed_dims,
                  token_mixer,
                  feedforward_channels,
+                 ex_module=EX_Module,
                  drop_rate=0.,
                  drop_path_rate=0.,
                  act_cfg=dict(type='GELU'),
@@ -122,6 +125,7 @@ class ExTransformerEncoderLayer(BaseModule):
             self.tokenmixer = token_mixer(
                 embed_dims=embed_dims,
                 dropout_layer=dict(type='DropPath', drop_prob=drop_path_rate),
+                ex_module=ex_module,
                 norm_cfg=norm_cfg)
 
         # The ret[0] of build_norm_layer is norm name.
@@ -161,6 +165,7 @@ class ExMixVisionTransformer(BaseModule):
                  in_channels=3,
                  embed_dims=64,
                  token_mixers=ExAttention,
+                 ex_module=EX_Module,
                  num_stages=4,
                  num_layers=[3, 4, 6, 3],
                  num_heads=[1, 2, 4, 8],
@@ -220,6 +225,7 @@ class ExMixVisionTransformer(BaseModule):
                     embed_dims=embed_dims_i,
                     token_mixer=token_mixers,
                     feedforward_channels=mlp_ratio * embed_dims_i,
+                    ex_module=ex_module,
                     drop_rate=drop_rate,
                     drop_path_rate=dpr[cur + idx],
                     act_cfg=act_cfg,
@@ -274,4 +280,11 @@ class SEFormer(ExMixVisionTransformer):
     def __init__(self, **kwargs):
         super(SEFormer, self).__init__(
             token_mixers=SEAttention,
+            **kwargs)
+
+@MODELS.register_module()
+class ExFormer_NoSelf(ExMixVisionTransformer):
+    def __init__(self, **kwargs):
+        super(ExFormer_NoSelf, self).__init__(
+            ex_module=EX_Module_noself,
             **kwargs)

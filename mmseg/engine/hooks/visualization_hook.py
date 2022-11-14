@@ -124,6 +124,7 @@ class SegVisualizationHook(Hook):
 
     @master_only
     def before_run(self, runner) -> None:
+        self._visualizer.add_config(runner.cfg)
         if self.draw_table is True:
             vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
             wandb = vis_backend.experiment
@@ -143,12 +144,14 @@ class SegVisualizationHook(Hook):
                        data_batch: dict,
                        outputs) -> None:
         if self.draw_table is True and self.every_n_inner_iters(batch_idx, self.interval):
+            vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
+            wandb = vis_backend.experiment
+
+            classes = runner.train_dataloader.dataset.METAINFO['classes']
+            # palette = runner.train_dataloader.dataset.METAINFO['palette']
+            num_classes = len(classes)
+
             for output in outputs:
-                vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
-                wandb = vis_backend.experiment
-                classes = runner.train_dataloader.dataset.METAINFO['classes']
-                # palette = runner.train_dataloader.dataset.METAINFO['palette']
-                num_classes = len(classes)
                 img_path = output.img_path.split('/')[-1].split('.')[0]
                 ori_img = data_batch['inputs'][0].permute(1, 2, 0).cpu().numpy().astype('uint8')
 
@@ -169,7 +172,7 @@ class SegVisualizationHook(Hook):
                                         masks={"ground_truth": {"mask_data": gt_sem_seg}})
                 predicted = wandb.Image(ori_img, classes=self.class_set,
                                         masks={"predicted_mask": {"mask_data": pred_sem_seg}})
-                print('INFO***add data to tabel***INFO')
+                print('INFO***add data to table***INFO')
                 self.test_table.add_data(img_path,
                                          wandb.Image(ori_img),
                                          annotated,
