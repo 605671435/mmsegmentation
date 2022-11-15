@@ -128,7 +128,7 @@ class SegVisualizationHook(Hook):
         if self.draw_table is True:
             vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
             wandb = vis_backend.experiment
-            columns = ["id", "image", "gt", "pred", "dice", "acc"]
+            columns = ["id", "iter", "image", "gt", "pred", "dice", "acc"]
             print('INFO***create a wandb table***INFO')
             self.test_table = wandb.Table(columns=columns)
             if hasattr(runner.train_dataloader.dataset, 'METAINFO'):
@@ -177,6 +177,7 @@ class SegVisualizationHook(Hook):
                                         masks={"predicted_mask": {"mask_data": pred_sem_seg}})
                 print('INFO***add data to table***INFO')
                 self.test_table.add_data(img_path,
+                                         runner.iter,
                                          wandb.Image(ori_img),
                                          annotated,
                                          predicted,

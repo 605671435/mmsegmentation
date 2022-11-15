@@ -12,7 +12,7 @@ model = dict(
                      out_channels=2,
                      loss_decode=[
                          dict(type='CrossEntropyLoss', use_sigmoid=False, loss_name='loss_ce', loss_weight=1.0),
-                         dict(type='DiceLoss', loss_name='loss_dice', loss_weight=2.0)]),
+                         dict(type='DiceLoss', loss_name='loss_dice', loss_weight=3.0)]),
     auxiliary_head=dict(
         type='FCNHead',
         in_channels=512,
@@ -59,7 +59,11 @@ val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
 
 default_hooks = dict(
-    visualization=dict(type='SegVisualizationHook', draw_table=True, interval=50))
+    visualization=dict(type='SegVisualizationHook', draw_table=True, interval=50),
+    checkpoint=dict(type='CheckpointHook',
+                    by_epoch=False,
+                    interval=2000,
+                    save_best=['aAcc', 'mDice'], rule='greater'))
 
 vis_backends = [
     dict(type='LocalVisBackend'),

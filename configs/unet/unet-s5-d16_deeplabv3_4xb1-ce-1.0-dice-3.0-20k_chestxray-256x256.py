@@ -14,7 +14,12 @@ model = dict(
 train_dataloader = dict(batch_size=2, num_workers=8)
 
 default_hooks = dict(
-    visualization=dict(type='SegVisualizationHook', draw_table=True))
+    visualization=dict(type='SegVisualizationHook', draw_table=True, interval=10),
+    checkpoint=dict(type='CheckpointHook',
+                    by_epoch=False,
+                    interval=2000,
+                    max_keep_ckpts=3,
+                    save_best=['mDice'], rule='greater'))
 
 vis_backends = [
     dict(type='LocalVisBackend'),
