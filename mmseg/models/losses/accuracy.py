@@ -34,7 +34,7 @@ def accuracy(pred, target, topk=1, thresh=None, ignore_index=None):
     if pred.size(0) == 0:
         accu = [pred.new_tensor(0.) for i in range(len(topk))]
         return accu[0] if return_single else accu
-    assert pred.ndim == target.ndim + 1
+    # assert pred.ndim == target.ndim + 1
     assert pred.size(0) == target.size(0)
     assert maxk <= pred.size(1), \
         f'maxk {maxk} exceeds pred dimension {pred.size(1)}'

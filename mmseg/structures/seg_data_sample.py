@@ -1,7 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from mmengine.structures import BaseDataElement, PixelData
 
-
 class SegDataSample(BaseDataElement):
     """A data structure interface of MMSegmentation. They are used as
     interfaces between different components.

@@ -6,7 +6,7 @@ from mmengine.model import BaseModel
 from mmengine.structures import PixelData
 from torch import Tensor
 
-from mmseg.structures import SegDataSample
+from mmseg.structures import SegDataSample, Seg3DDataSample, PixelData3D
 from mmseg.utils import (ForwardResults, OptConfigType, OptMultiConfig,
                          OptSampleList, SampleList)
 from ..utils import resize
@@ -95,6 +95,8 @@ class BaseSegmentor(BaseModel, metaclass=ABCMeta):
         elif mode == 'predict':
             return self.predict(inputs, data_samples)
         elif mode == 'tensor':
+            # predict = self.predict(inputs, data_samples)
+            # return predict[0].pred_sem_seg.data
             return self._forward(inputs, data_samples)
         else:
             raise RuntimeError(f'Invalid mode "{mode}". '
@@ -185,6 +187,67 @@ class BaseSegmentor(BaseModel, metaclass=ABCMeta):
                 PixelData(**{'data': i_seg_logits}),
                 'pred_sem_seg':
                 PixelData(**{'data': i_seg_pred})
+            })
+
+        return data_samples
+
+    def postprocess_result_3d(self,
+                           seg_logits: Tensor,
+                           data_samples: OptSampleList = None) -> list:
+        """ Convert results list to `SegDataSample`.
+        Args:
+            seg_logits (Tensor): The segmentation results, seg_logits from
+                model of each input image.
+            data_samples (list[:obj:`SegDataSample`]): The seg data samples.
+                It usually includes information such as `metainfo` and
+                `gt_sem_seg`. Default to None.
+        Returns:
+            list[:obj:`SegDataSample`]: Segmentation results of the
+            input images. Each SegDataSample usually contain:
+
+            - ``pred_sem_seg``(PixelData): Prediction of semantic segmentation.
+            - ``seg_logits``(PixelData): Predicted logits of semantic
+                segmentation before normalization.
+        """
+        batch_size, C, D, H, W = seg_logits.shape
+
+        if data_samples is None:
+            data_samples = [Seg3DDataSample() for _ in range(batch_size)]
+            only_prediction = True
+        else:
+            only_prediction = False
+
+        for i in range(batch_size):
+            if not only_prediction:
+                img_meta = data_samples[i].metainfo
+                # remove padding area
+                padding_left, padding_right, padding_top, padding_bottom, padding_up, padding_down = \
+                    img_meta.get('padding_size', [0]*6)
+                # i_seg_logits shape is 1, C, H, W after remove padding
+                i_seg_logits = seg_logits[i:i + 1, :,
+                                          padding_up:D - padding_down,
+                                          padding_top:H - padding_bottom,
+                                          padding_left:W - padding_right]
+                # resize as original shape
+                i_seg_logits = resize(
+                    i_seg_logits,
+                    size=img_meta['ori_shape'],
+                    mode='trilinear',
+                    align_corners=self.align_corners,
+                    warning=False).squeeze(0)
+            else:
+                i_seg_logits = seg_logits[i]
+
+            if C > 1:
+                i_seg_pred = i_seg_logits.argmax(dim=0, keepdim=True)
+            else:
+                i_seg_pred = (i_seg_logits >
+                              self.decode_head.threshold).to(i_seg_logits)
+            data_samples[i].set_data({
+                'seg_logits_3d':
+                PixelData3D(**{'data': i_seg_logits}),
+                'pred_sem_seg_3d':
+                PixelData3D(**{'data': i_seg_pred})
             })
 
         return data_samples

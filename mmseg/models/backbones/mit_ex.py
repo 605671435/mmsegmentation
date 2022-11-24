@@ -15,7 +15,7 @@ from mmseg.registry import MODELS
 from ..utils import PatchEmbed, nlc_to_nchw, nchw_to_nlc
 
 from .mit import MixFFN
-from ..utils.ex_attention import EX_Module, EX_Module_noself, EX_Module_noselect_par, EX_Module_noselect_seq
+from ..utils.ex_attention import EX_Module, EX_Module_noself, EX_Module_noselect_par, EX_Module_noselect_seq, EX_Module_onlyselect
 from ..utils.inverted_residual import InvertedResidual
 from ..utils.PSA import PSA_p
 from ..utils.se_layer import SELayer
@@ -306,3 +306,11 @@ class ExFormer_NoSlct_Par(ExMixVisionTransformer):
         super(ExFormer_NoSlct_Par, self).__init__(
             ex_module=EX_Module_noselect_par,
             **kwargs)
+
+@MODELS.register_module()
+class ExFormer_Onlyselect(ExMixVisionTransformer):
+    def __init__(self, **kwargs):
+        super(ExFormer_Onlyselect, self).__init__(
+            ex_module=EX_Module_onlyselect,
+            **kwargs)
+

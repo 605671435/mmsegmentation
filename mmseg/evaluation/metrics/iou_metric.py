@@ -58,12 +58,20 @@ class IoUMetric(BaseMetric):
             data_samples (Sequence[dict]): A batch of outputs from the model.
         """
         num_classes = len(self.dataset_meta['classes'])
-        for data_sample in data_samples:
-            pred_label = data_sample['pred_sem_seg']['data'].squeeze()
-            label = data_sample['gt_sem_seg']['data'].squeeze().to(pred_label)
-            self.results.append(
-                self.intersect_and_union(pred_label, label, num_classes,
-                                         self.ignore_index))
+        if data_samples[0].get('pred_sem_seg_3d') is not None:
+            for data_sample in data_samples:
+                pred_label = data_sample['pred_sem_seg_3d']['data'].squeeze()
+                label = data_sample['gt_sem_seg_3d']['data'].squeeze().to(pred_label)
+                self.results.append(
+                    self.intersect_and_union(pred_label, label, num_classes,
+                                             self.ignore_index))
+        else:
+            for data_sample in data_samples:
+                pred_label = data_sample['pred_sem_seg']['data'].squeeze()
+                label = data_sample['gt_sem_seg']['data'].squeeze().to(pred_label)
+                self.results.append(
+                    self.intersect_and_union(pred_label, label, num_classes,
+                                             self.ignore_index))
 
     def compute_metrics(self, results: list) -> Dict[str, float]:
         """Compute the metrics from processed results.

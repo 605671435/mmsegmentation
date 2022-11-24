@@ -11,6 +11,9 @@ from .shape_convert import (nchw2nlc2nchw, nchw_to_nlc, nlc2nchw2nlc,
 from .up_conv_block import UpConvBlock
 from .wrappers import Upsample, resize
 
+from .cbam import CBAM
+from .PSA import PSA_p
+from .ex_attention import EX_Module
 __all__ = [
     'ResLayer', 'SelfAttentionBlock', 'make_divisible', 'InvertedResidual',
     'UpConvBlock', 'InvertedResidualV3', 'SELayer', 'PatchEmbed',

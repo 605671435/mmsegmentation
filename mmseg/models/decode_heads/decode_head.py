@@ -87,6 +87,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
                  *,
                  num_classes,
                  out_channels=None,
+                 out_channel3d=None,
                  threshold=None,
                  dropout_ratio=0.1,
                  conv_cfg=None,
@@ -153,8 +154,14 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             self.sampler = build_pixel_sampler(sampler, context=self)
         else:
             self.sampler = None
-
-        self.conv_seg = nn.Conv2d(channels, self.out_channels, kernel_size=1)
+        self.out_channel3d = out_channel3d
+        if out_channel3d is not None:
+            assert self.channels % out_channel3d == 0, \
+                'self.channels % self.out_channel3d == 0'
+            self.out_channel3d = out_channel3d
+            self.conv_seg = nn.Conv3d(self.channels // self.out_channel3d, self.out_channels, kernel_size=1)
+        else:
+            self.conv_seg = nn.Conv2d(channels, self.out_channels, kernel_size=1)
         if dropout_ratio > 0:
             self.dropout = nn.Dropout2d(dropout_ratio)
         else:
@@ -241,6 +248,9 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         """Classify each pixel."""
         if self.dropout is not None:
             feat = self.dropout(feat)
+        if self.out_channel3d is not None:
+            B, C, H, W = feat.shape
+            feat = feat.reshape(B, self.channels // self.out_channel3d, self.out_channel3d, H, W)
         output = self.conv_seg(feat)
         return output
 
@@ -288,6 +298,12 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         ]
         return torch.stack(gt_semantic_segs, dim=0)
 
+    def _stack_batch_gt_3d(self, batch_data_samples: SampleList) -> Tensor:
+        gt_semantic_segs = [
+            data_sample.gt_sem_seg_3d.data for data_sample in batch_data_samples
+        ]
+        return torch.stack(gt_semantic_segs, dim=0)
+
     def loss_by_feat(self, seg_logits: Tensor,
                      batch_data_samples: SampleList) -> dict:
         """Compute segmentation loss.
@@ -301,14 +317,23 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
+        if self.out_channel3d is not None:
+            seg_label = self._stack_batch_gt_3d(batch_data_samples)
+            seg_logits = resize(
+                input=seg_logits,
+                size=seg_label.shape[2:],
+                mode='trilinear',
+                align_corners=self.align_corners)
+        else:
+            seg_label = self._stack_batch_gt(batch_data_samples)
+            seg_logits = resize(
+                input=seg_logits,
+                size=seg_label.shape[2:],
+                mode='bilinear',
+                align_corners=self.align_corners)
 
-        seg_label = self._stack_batch_gt(batch_data_samples)
         loss = dict()
-        seg_logits = resize(
-            input=seg_logits,
-            size=seg_label.shape[2:],
-            mode='bilinear',
-            align_corners=self.align_corners)
+
         if self.sampler is not None:
             seg_weight = self.sampler.sample(seg_logits, seg_label)
         else:
@@ -349,10 +374,16 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             Tensor: Outputs segmentation logits map.
         """
-
-        seg_logits = resize(
-            input=seg_logits,
-            size=batch_img_metas[0]['img_shape'],
-            mode='bilinear',
-            align_corners=self.align_corners)
+        if self.out_channel3d is not None:
+            seg_logits = resize(
+                input=seg_logits,
+                size=batch_img_metas[0]['img_shape'],
+                mode='trilinear',
+                align_corners=self.align_corners)
+        else:
+            seg_logits = resize(
+                input=seg_logits,
+                size=batch_img_metas[0]['img_shape'],
+                mode='bilinear',
+                align_corners=self.align_corners)
         return seg_logits

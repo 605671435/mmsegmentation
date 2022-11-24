@@ -1,7 +1,7 @@
 # dataset settings
 dataset_type = 'ChestXrayDataset'
 data_root = 'data/lung_segmentation'
-img_scale = (1024, 1024)
+img_scale = (512, 512)
 crop_size = (256, 256)
 train_pipeline = [
     dict(type='LoadImageFromFile'),

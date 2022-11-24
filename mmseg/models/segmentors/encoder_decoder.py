@@ -216,7 +216,8 @@ class EncoderDecoder(BaseSegmentor):
             ] * inputs.shape[0]
 
         seg_logits = self.inference(inputs, batch_img_metas)
-
+        if self.test_cfg.mode == 'slide_3d':
+            return self.postprocess_result_3d(seg_logits, data_samples)
         return self.postprocess_result(seg_logits, data_samples)
 
     def forward_dummy(self, img):
@@ -300,6 +301,66 @@ class EncoderDecoder(BaseSegmentor):
 
         return seg_logits
 
+    def slide_inference_3d(self, inputs: Tensor,
+                        batch_img_metas: List[dict]) -> Tensor:
+        """Inference by sliding-window with overlap.
+
+        If h_crop > h_img or w_crop > w_img, the small patch will be used to
+        decode without padding.
+
+        Args:
+            inputs (tensor): the tensor should have a shape NxCxHxW,
+                which contains all images in the batch.
+            batch_img_metas (List[dict]): List of image metainfo where each may
+                also contain: 'img_shape', 'scale_factor', 'flip', 'img_path',
+                'ori_shape', and 'pad_shape'.
+                For details on the values of these keys see
+                `mmseg/datasets/pipelines/formatting.py:PackSegInputs`.
+
+        Returns:
+            Tensor: The segmentation results, seg_logits from model of each
+                input image.
+        """
+
+        d_stride, h_stride, w_stride = self.test_cfg.stride
+        d_crop, h_crop, w_crop = self.test_cfg.crop_size
+        batch_size, _, d_img, h_img, w_img = inputs.size()
+        num_classes = self.num_classes
+        d_grids = max(d_img - d_crop + d_stride - 1, 0) // d_stride + 1
+        h_grids = max(h_img - h_crop + h_stride - 1, 0) // h_stride + 1
+        w_grids = max(w_img - w_crop + w_stride - 1, 0) // w_stride + 1
+        preds = inputs.new_zeros((batch_size, num_classes, d_img, h_img, w_img))
+        count_mat = inputs.new_zeros((batch_size, 1, d_img, h_img, w_img))
+        for h_idx in range(h_grids):
+            for w_idx in range(w_grids):
+                for d_idx in range(d_grids):
+                    y1 = h_idx * h_stride
+                    x1 = w_idx * w_stride
+                    z1 = d_idx * d_stride
+                    y2 = min(y1 + h_crop, h_img)
+                    x2 = min(x1 + w_crop, w_img)
+                    z2 = min(z1 + d_crop, d_img)
+                    y1 = max(y2 - h_crop, 0)
+                    x1 = max(x2 - w_crop, 0)
+                    z1 = max(z2 - d_crop, 0)
+                    crop_img = inputs[:, :, z1:z2, y1:y2, x1:x2]
+                    # change the image shape to patch shape
+                    batch_img_metas[0]['img_shape'] = crop_img.shape[2:]
+                    # the output of encode_decode is seg logits tensor map
+                    # with shape [N, C, H, W]
+                    crop_img = crop_img.squeeze(1)
+                    crop_seg_logit = self.encode_decode(crop_img, batch_img_metas)
+                    preds += F.pad(crop_seg_logit,
+                                   (int(x1), int(preds.shape[4] - x2),
+                                    int(y1), int(preds.shape[3] - y2),
+                                    int(z1), int(preds.shape[2] - z2)))
+
+                    count_mat[:, :, z1:z2, y1:y2, x1:x2] += 1
+        assert (count_mat == 0).sum() == 0
+        seg_logits = preds / count_mat
+
+        return seg_logits
+
     def whole_inference(self, inputs: Tensor,
                         batch_img_metas: List[dict]) -> Tensor:
         """Inference with full image.
@@ -338,11 +399,13 @@ class EncoderDecoder(BaseSegmentor):
                 input image.
         """
 
-        assert self.test_cfg.mode in ['slide', 'whole']
+        assert self.test_cfg.mode in ['slide', 'whole', 'slide_3d']
         ori_shape = batch_img_metas[0]['ori_shape']
         assert all(_['ori_shape'] == ori_shape for _ in batch_img_metas)
         if self.test_cfg.mode == 'slide':
             seg_logit = self.slide_inference(inputs, batch_img_metas)
+        elif self.test_cfg.mode == 'slide_3d':
+            seg_logit = self.slide_inference_3d(inputs, batch_img_metas)
         else:
             seg_logit = self.whole_inference(inputs, batch_img_metas)
 

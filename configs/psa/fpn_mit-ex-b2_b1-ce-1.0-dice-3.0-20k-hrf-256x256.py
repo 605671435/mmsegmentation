@@ -33,7 +33,7 @@ optim_wrapper = dict(
     _delete_=True,
     type='OptimWrapper',
     optimizer=dict(
-        type='AdamW', lr=0.00005, betas=(0.9, 0.999), weight_decay=0.01),
+        type='AdamW', lr=0.01, betas=(0.9, 0.999), weight_decay=0.01),
     paramwise_cfg=dict(
         custom_keys={
             # 'pos_block': dict(decay_mult=0.),
@@ -54,12 +54,17 @@ param_scheduler = [
     )
 ]
 
-train_dataloader = dict(batch_size=2, num_workers=8)
+train_dataloader = dict(batch_size=16, num_workers=8)
 val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
 
 default_hooks = dict(
-    visualization=dict(type='SegVisualizationHook', draw_table=True, interval=50))
+    visualization=dict(type='SegVisualizationHook', draw_table=True, interval=8),
+    checkpoint = dict(type='CheckpointHook',
+                      by_epoch=False,
+                      interval=2000,
+                      max_keep_ckpts=3,
+                      save_best=['mDice'], rule='greater'))
 
 vis_backends = [
     dict(type='LocalVisBackend'),

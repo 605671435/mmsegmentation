@@ -2,7 +2,7 @@
 import argparse
 import os
 from typing import Sequence
-
+import torch
 import mmcv
 from mmseg.apis import inference_model, init_model
 from mmengine import Config, DictAction
@@ -92,7 +92,6 @@ class ActivationsWrapper:
     def release(self):
         for handle in self.handles:
             handle.remove()
-
 
 def main():
     args = parse_args()

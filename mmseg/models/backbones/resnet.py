@@ -8,8 +8,7 @@ from mmengine.model import BaseModule
 from mmengine.utils.dl_utils.parrots_wrapper import _BatchNorm
 
 from mmseg.registry import MODELS
-from ..utils import ResLayer
-
+from ..utils import ResLayer, CBAM, EX_Module, PSA_p, SELayer
 
 class BasicBlock(BaseModule):
     """Basic block for ResNet."""
@@ -117,7 +116,9 @@ class Bottleneck(BaseModule):
                  norm_cfg=dict(type='BN'),
                  dcn=None,
                  plugins=None,
-                 init_cfg=None):
+                 init_cfg=None,
+                 with_attn=None,
+                 with_attn_stage=0):
         super().__init__(init_cfg)
         assert style in ['pytorch', 'caffe']
         assert dcn is None or isinstance(dcn, dict)
@@ -138,6 +139,17 @@ class Bottleneck(BaseModule):
         self.with_dcn = dcn is not None
         self.plugins = plugins
         self.with_plugins = plugins is not None
+        self.with_attn = with_attn
+        self.with_attn_stage = with_attn_stage
+        if with_attn is not None and with_attn_stage != 0:
+            if with_attn == 'cbam':
+                self.attn = CBAM(gate_channels=planes, reduction_ratio=16)
+            elif with_attn == 'se':
+                self.attn = SELayer(channels=planes, ratio=16)
+            elif with_attn == 'psa':
+                self.attn = PSA_p(inplanes=planes, planes=planes)
+            elif with_attn == 'ex':
+                self.attn = EX_Module(in_channels=planes, channels=planes)
 
         if self.with_plugins:
             # collect plugins for conv1/conv2/conv3
@@ -277,18 +289,25 @@ class Bottleneck(BaseModule):
             if self.with_plugins:
                 out = self.forward_plugin(out, self.after_conv1_plugin_names)
 
+            if self.with_attn is not None and self.with_attn_stage == 1:
+                out = self.attn(out)
+
             out = self.conv2(out)
             out = self.norm2(out)
             out = self.relu(out)
 
             if self.with_plugins:
                 out = self.forward_plugin(out, self.after_conv2_plugin_names)
+            if self.with_attn is not None and self.with_attn_stage == 2:
+                out = self.attn(out)
 
             out = self.conv3(out)
             out = self.norm3(out)
 
             if self.with_plugins:
                 out = self.forward_plugin(out, self.after_conv3_plugin_names)
+            if self.with_attn is not None and self.with_attn_stage == 3:
+                out = self.attn(out)
 
             if self.downsample is not None:
                 identity = self.downsample(x)
@@ -417,7 +436,9 @@ class ResNet(BaseModule):
                  with_cp=False,
                  zero_init_residual=True,
                  pretrained=None,
-                 init_cfg=None):
+                 init_cfg=None,
+                 with_attn=None,
+                 with_attn_stage=[0, 0, 0, 0]):
         super().__init__(init_cfg)
         if depth not in self.arch_settings:
             raise KeyError(f'invalid depth {depth} for resnet')
@@ -483,6 +504,9 @@ class ResNet(BaseModule):
         self.block, stage_blocks = self.arch_settings[depth]
         self.stage_blocks = stage_blocks[:num_stages]
         self.inplanes = stem_channels
+        self.with_attn = with_attn
+        assert len(with_attn_stage) == num_stages
+        self.with_attn_stage = with_attn_stage
 
         self._make_stem_layer(in_channels, stem_channels)
 
@@ -515,7 +539,9 @@ class ResNet(BaseModule):
                 plugins=stage_plugins,
                 multi_grid=stage_multi_grid,
                 contract_dilation=contract_dilation,
-                init_cfg=block_init_cfg)
+                init_cfg=block_init_cfg,
+                with_attn=with_attn,
+                with_attn_stage=with_attn_stage[i])
             self.inplanes = planes * self.block.expansion
             layer_name = f'layer{i+1}'
             self.add_module(layer_name, res_layer)

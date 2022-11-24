@@ -247,6 +247,9 @@ class LoadBiomedicalImageFromFile(BaseTransform):
         if self.to_xyz:
             img = img.transpose(0, 3, 2, 1)
 
+        if np.min(img) < 0:
+            img = img - np.min(img)
+
         results['img'] = img
         results['img_shape'] = img.shape[1:]
         results['ori_shape'] = img.shape[1:]
