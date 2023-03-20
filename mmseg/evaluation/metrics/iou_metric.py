@@ -75,39 +75,7 @@ class IoUMetric(BaseMetric):
             data_samples (Sequence[dict]): A batch of outputs from the model.
         """
         num_classes = len(self.dataset_meta['classes'])
-<<<<<<< HEAD
-        if data_samples[0].get('pred_sem_seg_3d') is not None:
-            for data_sample in data_samples:
-                pred_label = data_sample['pred_sem_seg_3d']['data'].squeeze()
-                # format_only always for test dataset without ground truth
-                if not self.format_only:
-                    label = data_sample['gt_sem_seg']['data'].squeeze().to(
-                        pred_label)
-                    self.results.append(
-                        self.intersect_and_union(pred_label, label, num_classes,
-                                                 self.ignore_index))
-                # format_result
-                if self.output_dir is not None:
-                    basename = osp.splitext(osp.basename(
-                        data_sample['img_path']))[0]
-                    png_filename = osp.abspath(
-                        osp.join(self.output_dir, f'{basename}.png'))
-                    output_mask = pred_label.cpu().numpy()
-                    # The index range of official ADE20k dataset is from 0 to 150.
-                    # But the index range of output is from 0 to 149.
-                    # That is because we set reduce_zero_label=True.
-                    if data_sample.get('reduce_zero_label', False):
-                        output_mask = output_mask + 1
-                    output = Image.fromarray(output_mask.astype(np.uint8))
-                    output.save(png_filename)
-        else:
-            for data_sample in data_samples:
-                pred_label = data_sample['pred_sem_seg']['data'].squeeze()
-                label = data_sample['gt_sem_seg']['data'].squeeze().to(pred_label)
-                self.results.append(
-                    self.intersect_and_union(pred_label, label, num_classes,
-                                             self.ignore_index))
-=======
+
         for data_sample in data_samples:
             pred_label = data_sample['pred_sem_seg']['data'].squeeze()
             # format_only always for test dataset without ground truth
@@ -131,7 +99,6 @@ class IoUMetric(BaseMetric):
                     output_mask = output_mask + 1
                 output = Image.fromarray(output_mask.astype(np.uint8))
                 output.save(png_filename)
->>>>>>> upstream/dev-1.x
 
     def compute_metrics(self, results: list) -> Dict[str, float]:
         """Compute the metrics from processed results.
@@ -146,7 +113,6 @@ class IoUMetric(BaseMetric):
                 mRecall.
         """
         logger: MMLogger = MMLogger.get_current_instance()
-<<<<<<< HEAD
 
         if self.format_only:
             logger.info(f'results are saved to {osp.dirname(self.output_dir)}')
@@ -154,11 +120,6 @@ class IoUMetric(BaseMetric):
 
         visualizer = Visualizer.get_current_instance()
 
-=======
-        if self.format_only:
-            logger.info(f'results are saved to {osp.dirname(self.output_dir)}')
-            return OrderedDict()
->>>>>>> upstream/dev-1.x
         # convert list of tuples to tuple of lists, e.g.
         # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to
         # ([A_1, ..., A_n], ..., [D_1, ..., D_n])

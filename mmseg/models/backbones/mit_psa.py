@@ -25,7 +25,7 @@ class PSAAttention(nn.Module):
                  norm_cfg=dict(type='LN')):
         super(PSAAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
-        self.psa_module = PSA_p(inplanes=embed_dims,
+        self.psa_module = PSA_p(in_channels=embed_dims,
                                 planes=embed_dims)
 
     def forward(self, x, hw_shape):

@@ -20,10 +20,6 @@ __all__ = [
     'ResLayer', 'SelfAttentionBlock', 'make_divisible', 'InvertedResidual',
     'UpConvBlock', 'InvertedResidualV3', 'SELayer', 'PatchEmbed',
     'nchw_to_nlc', 'nlc_to_nchw', 'nchw2nlc2nchw', 'nlc2nchw2nlc', 'Encoding',
-<<<<<<< HEAD
     'Upsample', 'resize', 'CBAM', 'PSA_p', 'EX_Module', 'DAPPM', 'PAPPM',
     'BasicBlock', 'Bottleneck'
-=======
-    'Upsample', 'resize', 'DAPPM', 'PAPPM', 'BasicBlock', 'Bottleneck'
->>>>>>> upstream/dev-1.x
 ]

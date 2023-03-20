@@ -3,12 +3,6 @@ import argparse
 import tempfile
 from pathlib import Path
 
-<<<<<<< HEAD
-from mmcv.cnn import get_model_complexity_info
-from mmengine import Config
-from mmseg.utils import register_all_modules
-from mmseg.models import build_segmentor
-=======
 import torch
 from mmengine import Config, DictAction
 from mmengine.logging import MMLogger
@@ -24,7 +18,6 @@ try:
     from mmengine.analysis.print_helper import _format_size
 except ImportError:
     raise ImportError('Please upgrade mmengine >= 0.6.0 to use this script.')
->>>>>>> upstream/dev-1.x
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -53,10 +46,7 @@ def parse_args():
 def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
     config_name = Path(args.config)
 
-<<<<<<< HEAD
-    args = parse_args()
-    register_all_modules(init_default_scope=True)
-=======
+
     if not config_name.exists():
         logger.error(f'Config file {config_name} does not exist')
 
@@ -68,7 +58,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
 
     init_default_scope(cfg.get('scope', 'mmseg'))
 
->>>>>>> upstream/dev-1.x
+
     if len(args.shape) == 1:
         input_shape = (3, args.shape[0], args.shape[0])
     elif len(args.shape) == 2:
@@ -77,16 +67,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
         raise ValueError('invalid input shape')
     result = {}
 
-<<<<<<< HEAD
-    cfg = Config.fromfile(args.config)
-    cfg.model.pretrained = None
-    cfg.model.train_cfg = None
-    cfg.model.test_cfg = None
-    model = build_segmentor(
-        cfg.model,
-        train_cfg=cfg.get('train_cfg'),
-        test_cfg=cfg.get('test_cfg')).cuda()
-=======
+
     model: BaseSegmentor = MODELS.build(cfg.model)
     if hasattr(model, 'auxiliary_head'):
         model.auxiliary_head = None
@@ -100,7 +81,7 @@ def inference(args: argparse.Namespace, logger: MMLogger) -> dict:
         'data_samples': [SegDataSample(metainfo=result)]
     }
     data = model.data_preprocessor(data_batch)
->>>>>>> upstream/dev-1.x
+
     model.eval()
     if cfg.model.decode_head.type in ['MaskFormerHead', 'Mask2FormerHead']:
         # TODO: Support MaskFormer and Mask2Former

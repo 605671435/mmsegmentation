@@ -289,11 +289,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             test_cfg (dict): The testing config.
 
         Returns:
-<<<<<<< HEAD
-           Tensor: Outputs segmentation logits map.
-=======
             Tensor: Outputs segmentation logits map.
->>>>>>> upstream/dev-1.x
         """
         seg_logits = self.forward(inputs)
 

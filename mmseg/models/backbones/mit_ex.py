@@ -15,7 +15,7 @@ from mmseg.registry import MODELS
 from ..utils import PatchEmbed, nlc_to_nchw, nchw_to_nlc
 
 from .mit import MixFFN
-from ..utils.ex_attention import EX_Module, EX_Module_noself, EX_Module_noselect_par, EX_Module_noselect_seq, EX_Module_onlyselect
+from ..utils.ex_attention import EX_Module2, EX_Module_noself, EX_Module_noselect_par, EX_Module_noselect_seq, EX_Module_onlyselect
 from ..utils.inverted_residual import InvertedResidual
 from ..utils.PSA import PSA_p
 from ..utils.se_layer import SELayer
@@ -24,7 +24,7 @@ class ExAttention(nn.Module):
     def __init__(self,
                  embed_dims,
                  dropout_layer=None,
-                 ex_module=EX_Module,
+                 ex_module=EX_Module2,
                  norm_cfg=dict(type='LN', eps=1e-6)):
         super(ExAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
@@ -46,7 +46,7 @@ class PSAAttention(nn.Module):
                  norm_cfg=dict(type='LN')):
         super(PSAAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
-        self.psa_module = PSA_p(inplanes=embed_dims,
+        self.psa_module = PSA_p(in_channels=embed_dims,
                                 planes=embed_dims)
 
     def forward(self, x, hw_shape):
@@ -63,7 +63,7 @@ class SEAttention(nn.Module):
                  norm_cfg=dict(type='LN')):
         super(SEAttention, self).__init__()
         self.dropout_layer = build_dropout(dropout_layer)
-        self.se_layer = SELayer(channels=embed_dims)
+        self.se_layer = SELayer(in_channels=embed_dims)
 
     def forward(self, x, hw_shape):
         x = nlc_to_nchw(x, hw_shape)
@@ -105,7 +105,7 @@ class ExTransformerEncoderLayer(BaseModule):
                  embed_dims,
                  token_mixer,
                  feedforward_channels,
-                 ex_module=EX_Module,
+                 ex_module=EX_Module2,
                  drop_rate=0.,
                  drop_path_rate=0.,
                  act_cfg=dict(type='GELU'),
@@ -167,7 +167,7 @@ class ExMixVisionTransformer(BaseModule):
                  in_channels=3,
                  embed_dims=64,
                  token_mixers=ExAttention,
-                 ex_module=EX_Module,
+                 ex_module=EX_Module2,
                  num_stages=4,
                  num_layers=[3, 4, 6, 3],
                  num_heads=[1, 2, 4, 8],

@@ -125,8 +125,6 @@ def stare_classes():
     """stare class names for external use."""
     return ['background', 'vessel']
 
-
-<<<<<<< HEAD
 def synapse_classes():
     """synapse class names for external use."""
     return [
@@ -136,7 +134,6 @@ def synapse_classes():
         'left_adrenal_gland'
     ]
 
-=======
 def mapillary_v1_classes():
     """mapillary_v1 class names for external use."""
     return [
@@ -256,8 +253,6 @@ def mapillary_v2_palette():
             [32, 32, 32], [111, 74, 0], [120, 10, 10], [81, 0, 81],
             [111, 111, 0], [0, 0, 0]]
 
-
->>>>>>> upstream/dev-1.x
 def cityscapes_palette():
     """Cityscapes palette for external use."""
     return [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
@@ -452,12 +447,9 @@ dataset_aliases = {
     'isaid': ['isaid', 'iSAID'],
     'stare': ['stare', 'STARE'],
     'lip': ['LIP', 'lip'],
-<<<<<<< HEAD
-    'synapse': ['synapse']
-=======
+    'synapse': ['synapse'],
     'mapillary_v1': ['mapillary_v1'],
     'mapillary_v2': ['mapillary_v2']
->>>>>>> upstream/dev-1.x
 }
 
 

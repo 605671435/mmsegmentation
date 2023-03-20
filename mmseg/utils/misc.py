@@ -7,12 +7,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-<<<<<<< HEAD
-from .typing import SampleList
 from mmengine.utils import scandir
-=======
 from .typing_utils import SampleList
->>>>>>> upstream/dev-1.x
+
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif',
                   '.tiff', '.webp')
@@ -141,17 +138,9 @@ def stack_batch(inputs: List[torch.Tensor],
     assert (size is not None) ^ (size_divisor is not None), \
         'only one of size and size_divisor should be valid'
 
-    if inputs[0].ndim == 4:
-        is3d = True
-    else:
-        is3d = False
-
     padded_inputs = []
     padded_samples = []
-    if is3d:
-        inputs_sizes = [(img.shape[-3], img.shape[-2], img.shape[-1]) for img in inputs]
-    else:
-        inputs_sizes = [(img.shape[-2], img.shape[-1]) for img in inputs]
+    inputs_sizes = [(img.shape[-2], img.shape[-1]) for img in inputs]
     max_size = np.stack(inputs_sizes).max(0)
     if size_divisor is not None and size_divisor > 1:
         # the last two dims are H,W, both subject to divisibility requirement
@@ -163,55 +152,21 @@ def stack_batch(inputs: List[torch.Tensor],
         if size is not None:
             width = max(size[-1] - tensor.shape[-1], 0)
             height = max(size[-2] - tensor.shape[-2], 0)
-            if is3d:
-                dim = max(size[-3] - tensor.shape[-3], 0)
-                padding_size = (0, width, 0, height, 0, dim)
-            # (padding_left, padding_right, padding_top, padding_bottom)
-            else:
-                padding_size = (0, width, 0, height)
+            padding_size = (0, width, 0, height)
         elif size_divisor is not None:
             width = max(max_size[-1] - tensor.shape[-1], 0)
             height = max(max_size[-2] - tensor.shape[-2], 0)
-            if is3d:
-                dim = max(max_size[-3] - tensor.shape[-3], 0)
-                padding_size = (0, width, 0, height, 0, dim)
-            else:
-                padding_size = (0, width, 0, height)
+            padding_size = (0, width, 0, height)
         else:
-            if is3d:
-                padding_size = [0, 0, 0, 0, 0, 0]
+            padding_size = [0, 0, 0, 0, 0, 0]
 
         # pad img
         pad_img = F.pad(tensor, padding_size, value=pad_val)
-        # if is3d:
-        #     pad_img = pad_img[0]
+
         padded_inputs.append(pad_img)
         # pad gt_sem_seg
         if data_samples is not None:
             data_sample = data_samples[i]
-<<<<<<< HEAD
-            if is3d:
-                gt_sem_seg_3d = data_sample.gt_sem_seg_3d.data
-                del data_sample.gt_sem_seg_3d.data
-                data_sample.gt_sem_seg_3d.data = F.pad(
-                    gt_sem_seg_3d, padding_size, value=seg_pad_val)
-                data_sample.set_metainfo({
-                    'img_shape': tensor.shape[-3:],
-                    'pad_shape': data_sample.gt_sem_seg_3d.shape,
-                    'padding_size': padding_size})
-                padded_samples.append(data_sample)
-            else:
-                gt_sem_seg = data_sample.gt_sem_seg.data
-                del data_sample.gt_sem_seg.data
-                data_sample.gt_sem_seg.data = F.pad(
-                    gt_sem_seg, padding_size, value=seg_pad_val)
-
-                data_sample.set_metainfo({
-                    'img_shape': tensor.shape[-2:],
-                    'pad_shape': data_sample.gt_sem_seg.shape,
-                    'padding_size': padding_size})
-                padded_samples.append(data_sample)
-=======
             gt_sem_seg = data_sample.gt_sem_seg.data
             del data_sample.gt_sem_seg.data
             data_sample.gt_sem_seg.data = F.pad(
@@ -227,7 +182,7 @@ def stack_batch(inputs: List[torch.Tensor],
                 'padding_size': padding_size
             })
             padded_samples.append(data_sample)
->>>>>>> upstream/dev-1.x
+
         else:
             padded_samples.append(
                 dict(

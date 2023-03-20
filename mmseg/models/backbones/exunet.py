@@ -9,7 +9,7 @@ from mmengine.utils.dl_utils.parrots_wrapper import _BatchNorm
 
 from mmseg.registry import MODELS
 from ..utils import UpConvBlock, Upsample
-from ..utils.ex_attention import EX_Module
+from ..utils.ex_attention import EX_Module2
 from .unet import BasicConvBlock
 
 class ExBasicConvBlock(nn.Module):
@@ -72,9 +72,9 @@ class ExBasicConvBlock(nn.Module):
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg))
-        ex_module = EX_Module(in_channels=out_channels,
-                              channels=out_channels,
-                              norm_cfg=dict(type='LN', eps=1e-6))
+        ex_module = EX_Module2(in_channels=out_channels,
+                               channels=out_channels,
+                               norm_cfg=dict(type='LN', eps=1e-6))
         convs.append(ex_module)
         self.convs = nn.Sequential(*convs)
 

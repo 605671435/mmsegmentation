@@ -7,11 +7,6 @@ from mmcv.cnn.bricks import DropPath, build_activation_layer, build_norm_layer
 from mmengine.model import BaseModule
 
 from mmseg.registry import MODELS
-from ..utils.ex_attention import EX_Module
-
-class ExAttention(EX_Module):
-    def __init__(self, dim, **kwargs):
-        super(ExAttention, self).__init__(in_channels=dim, channels=dim, **kwargs)
 
 class SepConv(nn.Module):
     r"""
@@ -343,11 +338,3 @@ class MetaFormer(BaseModule):
         super(MetaFormer, self).train(mode)
         self._freeze_stages()
 
-@MODELS.register_module()
-class CAFormer_s18(MetaFormer):
-    def __init__(self, **kwargs):
-        super(CAFormer_s18, self).__init__(
-            layers=[3, 3, 9, 3],
-            embed_dims=[64, 128, 320, 512],
-            token_mixers=[SepConv, SepConv, ExAttention, ExAttention],
-            **kwargs)
