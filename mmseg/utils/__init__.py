@@ -6,16 +6,16 @@ from .class_names import (ade_classes, ade_palette, cityscapes_classes, synapse_
                           get_palette, isaid_classes, isaid_palette,
                           loveda_classes, loveda_palette, potsdam_classes,
                           potsdam_palette, stare_classes, stare_palette,
-                          vaihingen_classes, vaihingen_palette, voc_classes,
-                          voc_palette)
+                          synapse_classes, synapse_palette, vaihingen_classes,
+                          vaihingen_palette, voc_classes, voc_palette)
 # yapf: enable
 from .collect_env import collect_env
 from .io import datafrombytes
 from .misc import add_prefix, stack_batch
 from .set_env import register_all_modules
-from .typing import (ConfigType, ForwardResults, MultiConfig, OptConfigType,
-                     OptMultiConfig, OptSampleList, SampleList, TensorDict,
-                     TensorList)
+from .typing_utils import (ConfigType, ForwardResults, MultiConfig,
+                           OptConfigType, OptMultiConfig, OptSampleList,
+                           SampleList, TensorDict, TensorList)
 
 __all__ = [
     'collect_env', 'register_all_modules', 'stack_batch', 'add_prefix',

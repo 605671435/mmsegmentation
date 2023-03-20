@@ -1,6 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os.path as osp
 
+import mmengine.fileio as fileio
+
 from mmseg.registry import DATASETS
 from .basesegdataset import BaseSegDataset
 
@@ -24,11 +26,15 @@ class PascalVOCDataset(BaseSegDataset):
                  [0, 64, 0], [128, 64, 0], [0, 192, 0], [128, 192, 0],
                  [0, 64, 128]])
 
-    def __init__(self, ann_file, **kwargs) -> None:
+    def __init__(self,
+                 ann_file,
+                 img_suffix='.jpg',
+                 seg_map_suffix='.png',
+                 **kwargs) -> None:
         super().__init__(
-            img_suffix='.jpg',
-            seg_map_suffix='.png',
+            img_suffix=img_suffix,
+            seg_map_suffix=seg_map_suffix,
             ann_file=ann_file,
             **kwargs)
-        assert self.file_client.exists(
-            self.data_prefix['img_path']) and osp.isfile(self.ann_file)
+        assert fileio.exists(self.data_prefix['img_path'],
+                             self.backend_args) and osp.isfile(self.ann_file)

@@ -18,3 +18,5 @@ log_processor = dict(by_epoch=False)
 log_level = 'INFO'
 load_from = None
 resume = False
+
+tta_model = dict(type='SegTTAModel')

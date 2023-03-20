@@ -138,6 +138,45 @@ mmsegmentation
 │   │   ├── ann_dir
 │   │   │   ├── train
 │   │   │   ├── val
+│   ├── synapse
+│   │   ├── img_dir
+│   │   │   ├── train
+│   │   │   ├── val
+│   │   ├── ann_dir
+│   │   │   ├── train
+│   │   │   ├── val
+│   ├── REFUGE
+│   │   ├── images
+│   │   │   ├── training
+│   │   │   ├── validation
+│   │   │   ├── test
+│   │   ├── annotations
+│   │   │   ├── training
+│   │   │   ├── validation
+│   │   │   ├── test
+│   ├── mapillary
+│   │   ├── training
+│   │   │   ├── images
+│   │   │   ├── v1.2
+|   │   │   │   ├── instances
+|   │   │   │   ├── labels
+|   │   │   │   └── panoptic
+│   │   │   ├── v2.0
+|   │   │   │   ├── instances
+|   │   │   │   ├── labels
+|   │   │   │   ├── panoptic
+|   │   │   │   └── polygons
+│   │   ├── validation
+│   │   │   ├── images
+|   │   │   ├── v1.2
+|   │   │   │   ├── instances
+|   │   │   │   ├── labels
+|   │   │   │   └── panoptic
+│   │   │   ├── v2.0
+|   │   │   │   ├── instances
+|   │   │   │   ├── labels
+|   │   │   │   ├── panoptic
+|   │   │   │   └── polygons
 ```
 
 ### Cityscapes
@@ -414,3 +453,175 @@ The contents of  LIP datasets include:
 │   │   │   ├── 100034_483681.png
 │   │   │   ├── ...
 ```
+
+## Synapse dataset
+
+This dataset could be download from [this page](https://www.synapse.org/#!Synapse:syn3193805/wiki/)
+
+To follow the data preparation setting of [TransUNet](https://arxiv.org/abs/2102.04306), which splits original training set (30 scans)
+into new training (18 scans) and validation set (12 scans). Please run the following command to prepare the dataset.
+
+```shell
+unzip RawData.zip
+cd ./RawData/Training
+```
+
+Then create `train.txt` and `val.txt` to split dataset.
+
+According to TransUnet, the following is the data set division.
+
+train.txt
+
+```none
+img0005.nii.gz
+img0006.nii.gz
+img0007.nii.gz
+img0009.nii.gz
+img0010.nii.gz
+img0021.nii.gz
+img0023.nii.gz
+img0024.nii.gz
+img0026.nii.gz
+img0027.nii.gz
+img0028.nii.gz
+img0030.nii.gz
+img0031.nii.gz
+img0033.nii.gz
+img0034.nii.gz
+img0037.nii.gz
+img0039.nii.gz
+img0040.nii.gz
+```
+
+val.txt
+
+```none
+img0008.nii.gz
+img0022.nii.gz
+img0038.nii.gz
+img0036.nii.gz
+img0032.nii.gz
+img0002.nii.gz
+img0029.nii.gz
+img0003.nii.gz
+img0001.nii.gz
+img0004.nii.gz
+img0025.nii.gz
+img0035.nii.gz
+```
+
+The contents of synapse datasets include:
+
+```none
+├── Training
+│   ├── img
+│   │   ├── img0001.nii.gz
+│   │   ├── img0002.nii.gz
+│   │   ├── ...
+│   ├── label
+│   │   ├── label0001.nii.gz
+│   │   ├── label0002.nii.gz
+│   │   ├── ...
+│   ├── train.txt
+│   ├── val.txt
+```
+
+Then, use this command to convert synapse dataset.
+
+```shell
+python tools/dataset_converters/synapse.py --dataset-path /path/to/synapse
+```
+
+Noted that MMSegmentation default evaluation metric (such as mean dice value) is calculated on 2D slice image,
+which is not comparable to results of 3D scan in some paper such as [TransUNet](https://arxiv.org/abs/2102.04306).
+
+### REFUGE
+
+Register in [REFUGE Challenge](https://refuge.grand-challenge.org) and download [REFUGE dataset](https://refuge.grand-challenge.org/REFUGE2Download).
+
+Then, unzip `REFUGE2.zip` and the contents of original datasets include:
+
+```none
+├── REFUGE2
+│   ├── REFUGE2
+│   │   ├── Annotation-Training400.zip
+│   │   ├── REFUGE-Test400.zip
+│   │   ├── REFUGE-Test-GT.zip
+│   │   ├── REFUGE-Training400.zip
+│   │   ├── REFUGE-Validation400.zip
+│   │   ├── REFUGE-Validation400-GT.zip
+│   ├── __MACOSX
+```
+
+Please run the following command to convert REFUGE dataset:
+
+```shell
+python tools/convert_datasets/refuge.py --raw_data_root=/path/to/refuge/REFUGE2/REFUGE2
+```
+
+The script will make directory structure below:
+
+```none
+│   ├── REFUGE
+│   │   ├── images
+│   │   │   ├── training
+│   │   │   ├── validation
+│   │   │   ├── test
+│   │   ├── annotations
+│   │   │   ├── training
+│   │   │   ├── validation
+│   │   │   ├── test
+```
+
+It includes 400 images for training, 400 images for validation and 400 images for testing which is the same as REFUGE 2018 dataset.
+
+## Mapillary Vistas Datasets
+
+- The dataset could be download [here](https://www.mapillary.com/dataset/vistas) after registration.
+
+- Mapillary Vistas Dataset use 8-bit with color-palette to store labels. No conversion operation is required.
+
+- Assumption you have put the dataset zip file in `mmsegmentation/data/mapillary`
+
+- Please run the following commands to unzip dataset.
+
+  ```bash
+  cd data/mapillary
+  unzip An-ZjB1Zm61yAZG0ozTymz8I8NqI4x0MrYrh26dq7kPgfu8vf9ImrdaOAVOFYbJ2pNAgUnVGBmbue9lTgdBOb5BbKXIpFs0fpYWqACbrQDChAA2fdX0zS9PcHu7fY8c-FOvyBVxPNYNFQuM.zip
+  ```
+
+- After unzip, you will get Mapillary Vistas Dataset like this structure. Semantic segmentation mask labels in `labels` folder.
+
+  ```none
+  mmsegmentation
+  ├── mmseg
+  ├── tools
+  ├── configs
+  ├── data
+  │   ├── mapillary
+  │   │   ├── training
+  │   │   │   ├── images
+  │   │   │   ├── v1.2
+  |   │   │   │   ├── instances
+  |   │   │   │   ├── labels
+  |   │   │   │   └── panoptic
+  │   │   │   ├── v2.0
+  |   │   │   │   ├── instances
+  |   │   │   │   ├── labels
+  |   │   │   │   ├── panoptic
+  |   │   │   │   └── polygons
+  │   │   ├── validation
+  │   │   │   ├── images
+  |   │   │   ├── v1.2
+  |   │   │   │   ├── instances
+  |   │   │   │   ├── labels
+  |   │   │   │   └── panoptic
+  │   │   │   ├── v2.0
+  |   │   │   │   ├── instances
+  |   │   │   │   ├── labels
+  |   │   │   │   ├── panoptic
+  |   │   │   │   └── polygons
+  ```
+
+- You could set Datasets version with `MapillaryDataset_v1` and `MapillaryDataset_v2` in your configs.
+  View the Mapillary Vistas Datasets config file here [V1.2](https://github.com/open-mmlab/mmsegmentation/blob/dev-1.x/configs/_base_/datasets/mapillary_v1.py) and  [V2.0](https://github.com/open-mmlab/mmsegmentation/blob/dev-1.x/configs/_base_/datasets/mapillary_v2.py)

@@ -40,6 +40,10 @@ __all__ = [
     'PointHead', 'APCHead', 'DMHead', 'LRASPPHead', 'SETRUPHead',
     'SETRMLAHead', 'DPTHead', 'SETRMLAHead', 'SegmenterMaskTransformerHead',
     'SegformerHead', 'ISAHead', 'STDCHead', 'IterativeDecodeHead',
+<<<<<<< HEAD
     'KernelUpdateHead', 'KernelUpdator', 'DSHead', 'MaskFormerHead', 'Mask2FormerHead',
+=======
+    'KernelUpdateHead', 'KernelUpdator', 'MaskFormerHead', 'Mask2FormerHead',
+>>>>>>> upstream/dev-1.x
     'LightHamHead', 'PIDHead'
 ]

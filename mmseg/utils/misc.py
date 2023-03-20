@@ -7,8 +7,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+<<<<<<< HEAD
 from .typing import SampleList
 from mmengine.utils import scandir
+=======
+from .typing_utils import SampleList
+>>>>>>> upstream/dev-1.x
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif',
                   '.tiff', '.webp')
@@ -185,6 +189,7 @@ def stack_batch(inputs: List[torch.Tensor],
         # pad gt_sem_seg
         if data_samples is not None:
             data_sample = data_samples[i]
+<<<<<<< HEAD
             if is3d:
                 gt_sem_seg_3d = data_sample.gt_sem_seg_3d.data
                 del data_sample.gt_sem_seg_3d.data
@@ -206,7 +211,27 @@ def stack_batch(inputs: List[torch.Tensor],
                     'pad_shape': data_sample.gt_sem_seg.shape,
                     'padding_size': padding_size})
                 padded_samples.append(data_sample)
+=======
+            gt_sem_seg = data_sample.gt_sem_seg.data
+            del data_sample.gt_sem_seg.data
+            data_sample.gt_sem_seg.data = F.pad(
+                gt_sem_seg, padding_size, value=seg_pad_val)
+            if 'gt_edge_map' in data_sample:
+                gt_edge_map = data_sample.gt_edge_map.data
+                del data_sample.gt_edge_map.data
+                data_sample.gt_edge_map.data = F.pad(
+                    gt_edge_map, padding_size, value=seg_pad_val)
+            data_sample.set_metainfo({
+                'img_shape': tensor.shape[-2:],
+                'pad_shape': data_sample.gt_sem_seg.shape,
+                'padding_size': padding_size
+            })
+            padded_samples.append(data_sample)
+>>>>>>> upstream/dev-1.x
         else:
-            padded_samples = None
+            padded_samples.append(
+                dict(
+                    img_padding_size=padding_size,
+                    pad_shape=pad_img.shape[-2:]))
 
     return torch.stack(padded_inputs, dim=0), padded_samples

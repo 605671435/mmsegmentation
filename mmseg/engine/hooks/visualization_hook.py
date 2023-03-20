@@ -2,6 +2,7 @@
 import os.path as osp
 import warnings
 from typing import Optional, Sequence
+<<<<<<< HEAD
 from PIL import Image
 import SimpleITK as sitk
 import os
@@ -10,6 +11,11 @@ import numpy as np
 import mmcv
 import torch
 from mmengine.fileio import FileClient
+=======
+
+import mmcv
+import mmengine.fileio as fileio
+>>>>>>> upstream/dev-1.x
 from mmengine.hooks import Hook
 from mmengine.runner import Runner
 from mmengine.dist import master_only
@@ -42,9 +48,16 @@ class SegVisualizationHook(Hook):
         interval (int): The interval of visualization. Defaults to 50.
         show (bool): Whether to display the drawn image. Default to False.
         wait_time (float): The interval of show (s). Defaults to 0.
+<<<<<<< HEAD
         backend_args (dict, Optional): Arguments to instantiate a FileClient.
             See :class:`mmengine.fileio.FileClient` for details.
             Defaults to ``None``.
+=======
+        backend_args (dict, Optional): Arguments to instantiate a file backend.
+            See https://mmengine.readthedocs.io/en/latest/api/fileio.htm
+            for details. Defaults to None.
+            Notes: mmcv>=2.0.0rc4, mmengine>=0.2.0 required.
+>>>>>>> upstream/dev-1.x
     """
 
     def __init__(self,
@@ -55,7 +68,11 @@ class SegVisualizationHook(Hook):
                  interval: int = 50,
                  show: bool = False,
                  wait_time: float = 0.,
+<<<<<<< HEAD
                  backend_args: dict = None):
+=======
+                 backend_args: Optional[dict] = None):
+>>>>>>> upstream/dev-1.x
         self._visualizer: SegLocalVisualizer = \
             SegLocalVisualizer.get_current_instance()
         self.interval = interval
@@ -69,8 +86,12 @@ class SegVisualizationHook(Hook):
                           'needs to be excluded.')
 
         self.wait_time = wait_time
+<<<<<<< HEAD
         self.file_client_args = backend_args.copy()
         self.file_client = None
+=======
+        self.backend_args = backend_args.copy() if backend_args else None
+>>>>>>> upstream/dev-1.x
         self.draw = draw
         self.draw_table = draw_table
         self.draw_ct = draw_ct
@@ -109,13 +130,11 @@ class SegVisualizationHook(Hook):
         if self.draw is False or mode == 'train':
             return
 
-        if self.file_client is None:
-            self.file_client = FileClient(**self.file_client_args)
-
         if self.every_n_inner_iters(batch_idx, self.interval):
             for output in outputs:
                 img_path = output.img_path
-                img_bytes = self.file_client.get(img_path)
+                img_bytes = fileio.get(
+                    img_path, backend_args=self.backend_args)
                 img = mmcv.imfrombytes(img_bytes, channel_order='rgb')
                 window_name = f'{mode}_{osp.basename(img_path)}'
 

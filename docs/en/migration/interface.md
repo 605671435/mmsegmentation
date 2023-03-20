@@ -6,14 +6,17 @@ This guide describes the fundamental differences between MMSegmentation 0.x and 
 
 ## New dependencies
 
-MMSegmentation 1.x depends on some new packages, you can prepare a new clean environment and install again according to the [installation tutorial](get_started.md).
+MMSegmentation 1.x depends on some new packages, you can prepare a new clean environment and install again according to the [installation tutorial](../get_started.md).
+
 Or install the below packages manually.
 
 1. [MMEngine](https://github.com/open-mmlab/mmengine): MMEngine is the core the OpenMMLab 2.0 architecture, and we splited many compentents unrelated to computer vision from MMCV to MMEngine.
 
 2. [MMCV](https://github.com/open-mmlab/mmcv): The computer vision package of OpenMMLab. This is not a new dependency, but you need to upgrade it to above **2.0.0rc1** version.
 
-3. [MMClassification](https://github.com/open-mmlab/mmclassification)(Optional): The  image classification toolbox and benchmark of OpenMMLab. This is not a new dependency, but you need to upgrade it to above **1.0.0rc0** version.
+3. [MMClassification](https://github.com/open-mmlab/mmclassification)(Optional): The image classification toolbox and benchmark of OpenMMLab. This is not a new dependency, but you need to upgrade it to above **1.0.0rc0** version.
+
+4. [MMDetection](https://github.com/open-mmlab/mmdetection)(Optional): The object detection toolbox and benchmark of OpenMMLab. This is not a new dependency, but you need to upgrade it to above **3.0.0rc0** version.
 
 ## Train launch
 
@@ -62,6 +65,35 @@ Compared with MMSeg0.x, MMSeg1.x provides fewer command line arguments in `tools
 <td>--cfg-options randomness.deterministic=True</td>
 </table>
 
+## Test launch
+
+Similar to training launch, there are only common arguments in tools/test.py of MMSegmentation 1.x.
+Below is the difference in test scripts,
+please refer to [this documentation](../user_guides/4_train_test.md) for more details about test launch.
+
+<table class="docutils">
+<tr>
+<td>Function</td>
+<td>0.x</td>
+<td>1.x</td>
+</tr>
+<tr>
+<td>Evaluation metrics</td>
+<td>--eval mIoU</td>
+<td>--cfg-options test_evaluator.type=IoUMetric</td>
+</tr>
+<tr>
+<td>Whether to use test time augmentation</td>
+<td>--aug-test</td>
+<td>--tta</td>
+</tr>
+<tr>
+<td>Whether save the output results without perform evaluation</td>
+<td>--format-only</td>
+<td>--cfg-options test_evaluator.format_only=True</td>
+</tr>
+</table>
+
 ## Configuration file
 
 ### Model settings
@@ -86,7 +118,7 @@ Add `model.data_preprocessor` field to configure the `DataPreProcessor`, includi
 
 - `bgr_to_rgb` (bool): whether to convert image from BGR to RGB.Defaults to False.
 
-- `rgb_to_bgr` (bool): whether to convert image from RGB to RGB. Defaults to False.
+- `rgb_to_bgr` (bool): whether to convert image from RGB to BGR. Defaults to False.
 
 **Note:**
 Please refer [models documentation](../advanced_guides/models.md) for more details.
@@ -146,9 +178,12 @@ Changes in **pipeline**
 - The original formatting transforms **`ToTensor`**、**`ImageToTensor`**、**`Collect`** are combined as [`PackSegInputs`](mmseg.datasets.transforms.PackSegInputs)
 - We don't recommend to do **`Normalize`** and **Pad** in the dataset pipeline. Please remove it from pipelines and set it in the `data_preprocessor` field.
 - The original **`Resize`** in MMSeg 1.x has been changed to **`RandomResize`** and the input arguments `img_scale` is renamed to `scale`, and the default value of `keep_ratio` is modified to False.
+- The original `test_pipeline` combines single-scale test and multi-scale test together, in MMSeg 1.x we separate it into `test_pipeline` and `tta_pipeline`.
 
 **Note:**
 We move some work of data transforms to the data preprocessor, like normalization, see [the documentation](package.md) for more details.
+
+train_pipeline
 
 <table class="docutils">
 <tr>
@@ -195,11 +230,69 @@ train_pipeline = [
 </tr>
 </table>
 
+test_pipeline
+
+<table class="docutils">
+<tr>
+<td>Original</td>
+<td>
+
+```python
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='MultiScaleFlipAug',
+        img_scale=(2560, 640),
+        # img_ratios=[0.5, 0.75, 1.0, 1.25, 1.5, 1.75],
+        flip=False,
+        transforms=[
+            dict(type='Resize', keep_ratio=True),
+            dict(type='RandomFlip'),
+            dict(type='Normalize', **img_norm_cfg),
+            dict(type='ImageToTensor', keys=['img']),
+            dict(type='Collect', keys=['img']),
+        ])
+]
+```
+
+</td>
+<tr>
+<td>New</td>
+<td>
+
+```python
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(type='Resize', scale=(2560, 640), keep_ratio=True),
+    dict(type='LoadAnnotations', reduce_zero_label=True),
+    dict(type='PackSegInputs')
+]
+img_ratios = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]
+tta_pipeline = [
+    dict(type='LoadImageFromFile', backend_args=None),
+    dict(
+        type='TestTimeAug',
+        transforms=[
+            [
+                dict(type='Resize', scale_factor=r, keep_ratio=True)
+                for r in img_ratios
+            ],
+            [
+                dict(type='RandomFlip', prob=0., direction='horizontal'),
+                dict(type='RandomFlip', prob=1., direction='horizontal')
+            ], [dict(type='LoadAnnotations')], [dict(type='PackSegInputs')]
+        ])
+]
+```
+
+</td>
+</tr>
+</table>
+
 Changes in **`evaluation`**:
 
 - The **`evaluation`** field is split to `val_evaluator` and `test_evaluator`. And it won't support `interval` and `save_best` arguments.
-  The `interval` is moved to `train_cfg.val_interval`, and the `save_best`
-  is moved to `default_hooks.checkpoint.save_best`. `pre_eval` has been removed.
+  The `interval` is moved to `train_cfg.val_interval`, and the `save_best` is moved to `default_hooks.checkpoint.save_best`. `pre_eval` has been removed.
 - `'mIoU'` has been changed to `'IoUMetric'`.
 
 <table class="docutils">
@@ -229,8 +322,7 @@ test_evaluator = val_evaluator
 
 Changes in **`optimizer`** and **`optimizer_config`**:
 
-- Now we use `optim_wrapper` field to specify all configuration about the optimization process. And the
-  `optimizer` is a sub field of `optim_wrapper` now.
+- Now we use `optim_wrapper` field to specify all configuration about the optimization process. And the `optimizer` is a sub field of `optim_wrapper` now.
 - `paramwise_cfg` is also a sub field of `optim_wrapper`, instead of `optimizer`.
 - `optimizer_config` is removed now, and all configurations of it are moved to `optim_wrapper`.
 - `grad_clip` is renamed to `clip_grad`.
@@ -264,11 +356,9 @@ optim_wrapper = dict(
 Changes in **`lr_config`**:
 
 - The `lr_config` field is removed and we use new `param_scheduler` to replace it.
-- The `warmup` related arguments are removed, since we use schedulers combination to implement this
-  functionality.
+- The `warmup` related arguments are removed, since we use schedulers combination to implement this functionality.
 
-The new schedulers combination mechanism is very flexible, and you can use it to design many kinds of learning
-rate / momentum curves. See [the tutorial](TODO) for more details.
+The new schedulers combination mechanism is very flexible, and you can use it to design many kinds of learning rate / momentum curves. See [the tutorial](TODO) for more details.
 
 <table class="docutils">
 <tr>
@@ -312,8 +402,7 @@ param_scheduler = [
 
 Changes in **`runner`**:
 
-Most configuration in the original `runner` field is moved to `train_cfg`, `val_cfg` and `test_cfg`, which
-configure the loop in training, validation and test.
+Most configuration in the original `runner` field is moved to `train_cfg`, `val_cfg` and `test_cfg`, which configure the loop in training, validation and test.
 
 <table class="docutils">
 <tr>
@@ -340,8 +429,7 @@ test_cfg = dict(type='TestLoop') # Use the default test loop.
 </tr>
 </table>
 
-In fact, in OpenMMLab 2.0, we introduced `Loop` to control the behaviors in training, validation and test. The functionalities of `Runner` are also changed. You can find more details of [runner tutorial](https://github.com/open-mmlab/mmengine/blob/main/docs/en/design/runner.md)
-in [MMEngine](https://github.com/open-mmlab/mmengine/).
+In fact, in OpenMMLab 2.0, we introduced `Loop` to control the behaviors in training, validation and test. The functionalities of `Runner` are also changed. You can find more details of [runner tutorial](https://github.com/open-mmlab/mmengine/blob/main/docs/en/design/runner.md) in [MMEngine](https://github.com/open-mmlab/mmengine/).
 
 ### Runtime settings
 
@@ -371,8 +459,7 @@ default_hooks = dict(
     visualization=dict(type='SegVisualizationHook'))
 ```
 
-In addition, we split the original logger to logger and visualizer. The logger is used to record
-information and the visualizer is used to show the logger in different backends, like terminal and TensorBoard.
+In addition, we split the original logger to logger and visualizer. The logger is used to record information and the visualizer is used to show the logger in different backends, like terminal and TensorBoard.
 
 <table class="docutils">
 <tr>
@@ -416,8 +503,7 @@ Changes in **`load_from`** and **`resume_from`**:
   - If `resume=False` and `load_from` is **not None**, only load the checkpoint, not resume training.
   - If `resume=False` and `load_from` is **None**, do not load nor resume.
 
-Changes in **`dist_params`**: The `dist_params` field is a sub field of `env_cfg` now. And there are some new
-configurations in the `env_cfg`.
+Changes in **`dist_params`**: The `dist_params` field is a sub field of `env_cfg` now. And there are some new configurations in the `env_cfg`.
 
 ```python
 env_cfg = dict(
@@ -434,8 +520,6 @@ env_cfg = dict(
 
 Changes in **`workflow`**: `workflow` related functionalities are removed.
 
-New field **`visualizer`**: The visualizer is a new design in OpenMMLab 2.0 architecture. We use a
-visualizer instance in the runner to handle results & log visualization and save to different backends.
-See the [visualization tutorial](user_guides/visualization.md) for more details.
+New field **`visualizer`**: The visualizer is a new design in OpenMMLab 2.0 architecture. We use a visualizer instance in the runner to handle results & log visualization and save to different backends. See the [visualization tutorial](../user_guides/visualization.md) for more details.
 
-New field **`default_scope`**: The start point to search module for all registries. The `default_scope` in MMSegmentation is `mmseg`. See [the registry tutorial](https://github.com/open-mmlab/mmengine/blob/main/docs/en/tutorials/registry.md) for more details.
+New field **`default_scope`**: The start point to search module for all registries. The `default_scope` in MMSegmentation is `mmseg`. See [the registry tutorial](https://github.com/open-mmlab/mmengine/blob/main/docs/en/advanced_tutorials/registry.md) for more details.

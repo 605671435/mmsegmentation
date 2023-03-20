@@ -6,8 +6,6 @@ import os.path as osp
 from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
-from mmseg.utils import register_all_modules
-
 
 # TODO: support fuse_conv_bn, visualization, and format_only
 def parse_args():
@@ -19,6 +17,10 @@ def parse_args():
         '--work-dir',
         help=('if specified, the evaluation metric results will be dumped'
               'into the directory as json'))
+    parser.add_argument(
+        '--out',
+        type=str,
+        help='The directory to save output prediction for offline evaluation')
     parser.add_argument(
         '--show', action='store_true', help='show prediction results')
     parser.add_argument(
@@ -43,6 +45,8 @@ def parse_args():
         choices=['none', 'pytorch', 'slurm', 'mpi'],
         default='none',
         help='job launcher')
+    parser.add_argument(
+        '--tta', action='store_true', help='Test time augmentation')
     parser.add_argument('--local_rank', type=int, default=0)
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
@@ -75,10 +79,6 @@ def trigger_visualization_hook(cfg, args):
 def main():
     args = parse_args()
 
-    # register all modules in mmseg into the registries
-    # do not init the default scope here because it will be init in the runner
-    register_all_modules(init_default_scope=False)
-
     # load config
     cfg = Config.fromfile(args.config)
     cfg.launcher = args.launcher
@@ -98,6 +98,16 @@ def main():
 
     if args.show or args.show_dir:
         cfg = trigger_visualization_hook(cfg, args)
+
+    if args.tta:
+        cfg.test_dataloader.dataset.pipeline = cfg.tta_pipeline
+        cfg.tta_model.module = cfg.model
+        cfg.model = cfg.tta_model
+
+    # add output_dir in metric
+    if args.out is not None:
+        cfg.test_evaluator['output_dir'] = args.out
+        cfg.test_evaluator['keep_results'] = True
 
     # build the runner from config
     runner = Runner.from_cfg(cfg)

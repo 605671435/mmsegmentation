@@ -29,6 +29,10 @@ __all__ = [
     'ResNeSt', 'MobileNetV2', 'UNet', 'CGNet', 'MobileNetV3',
     'VisionTransformer', 'SwinTransformer', 'MixVisionTransformer',
     'BiSeNetV1', 'BiSeNetV2', 'ICNet', 'TIMMBackbone', 'ERFNet', 'PCPVT',
+<<<<<<< HEAD
     'SVT', 'STDCNet', 'STDCContextPathNet', 'BEiT', 'MAE',
     'MetaFormer', 'MSCAN', 'PIDNet'
+=======
+    'SVT', 'STDCNet', 'STDCContextPathNet', 'BEiT', 'MAE', 'PIDNet', 'MSCAN'
+>>>>>>> upstream/dev-1.x
 ]
