@@ -3,7 +3,7 @@ import argparse
 
 from mmcv.cnn import get_model_complexity_info
 from mmengine import Config
-
+from mmseg.utils import register_all_modules
 from mmseg.models import build_segmentor
 
 def parse_args():
@@ -23,7 +23,7 @@ def parse_args():
 def main():
 
     args = parse_args()
-
+    register_all_modules(init_default_scope=True)
     if len(args.shape) == 1:
         input_shape = (3, args.shape[0], args.shape[0])
     elif len(args.shape) == 2:

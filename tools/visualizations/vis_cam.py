@@ -365,7 +365,7 @@ def main():
         if digit_version(grad_cam_v) >= digit_version('1.3.7'):
             from pytorch_grad_cam.utils.model_targets import \
                 SemanticSegmentationTarget
-            targets = [SemanticSegmentationTarget(1, pred_mask)]
+            targets = [SemanticSegmentationTarget(args.target_category, pred_mask)]
         else:
             targets = args.target_category
     # calculate cam grads and show|save the visualization image

@@ -179,8 +179,8 @@ def stack_batch(inputs: List[torch.Tensor],
 
         # pad img
         pad_img = F.pad(tensor, padding_size, value=pad_val)
-        if is3d:
-            pad_img = pad_img[0]
+        # if is3d:
+        #     pad_img = pad_img[0]
         padded_inputs.append(pad_img)
         # pad gt_sem_seg
         if data_samples is not None:

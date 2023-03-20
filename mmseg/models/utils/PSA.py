@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch._utils
 import torch.nn.functional as F
+from mmseg.registry.registry import MODELS
+
 
 def constant_init(module, val, bias=0):
     if hasattr(module, 'weight') and module.weight is not None:
@@ -26,13 +28,18 @@ def kaiming_init(module,
     if hasattr(module, 'bias') and module.bias is not None:
         nn.init.constant_(module.bias, bias)
 
+@MODELS.register_module()
 class PSA_p(nn.Module):
-    def __init__(self, inplanes, planes, kernel_size=1, stride=1):
+    def __init__(self,
+                 in_channels,
+                 # planes,
+                 kernel_size=1,
+                 stride=1):
         super(PSA_p, self).__init__()
 
-        self.inplanes = inplanes
-        self.inter_planes = planes // 2
-        self.planes = planes
+        self.inplanes = in_channels
+        self.inter_planes = in_channels // 2
+        self.planes = in_channels
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = (kernel_size-1)//2
@@ -136,13 +143,18 @@ class PSA_p(nn.Module):
         out = context_spatial + context_channel
         return out
 
+@MODELS.register_module()
 class PSA_s(nn.Module):
-    def __init__(self, inplanes, planes, kernel_size=1, stride=1):
+    def __init__(self,
+                 in_channels,
+                 # planes,
+                 kernel_size=1,
+                 stride=1):
         super(PSA_s, self).__init__()
 
-        self.inplanes = inplanes
-        self.inter_planes = planes // 2
-        self.planes = planes
+        self.inplanes = in_channels
+        self.inter_planes = in_channels // 2
+        self.planes = in_channels
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = (kernel_size - 1) // 2

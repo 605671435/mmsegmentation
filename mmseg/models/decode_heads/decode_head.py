@@ -159,11 +159,14 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             assert self.channels % out_channel3d == 0, \
                 'self.channels % self.out_channel3d == 0'
             self.out_channel3d = out_channel3d
-            self.conv_seg = nn.Conv3d(self.channels // self.out_channel3d, self.out_channels, kernel_size=1)
+            self.conv_seg = nn.Conv3d(self.channels, self.out_channels, kernel_size=1)
         else:
             self.conv_seg = nn.Conv2d(channels, self.out_channels, kernel_size=1)
         if dropout_ratio > 0:
-            self.dropout = nn.Dropout2d(dropout_ratio)
+            if out_channel3d is not None:
+                self.dropout = nn.Dropout3d(dropout_ratio)
+            else:
+                self.dropout = nn.Dropout2d(dropout_ratio)
         else:
             self.dropout = None
 
@@ -248,9 +251,9 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         """Classify each pixel."""
         if self.dropout is not None:
             feat = self.dropout(feat)
-        if self.out_channel3d is not None:
-            B, C, H, W = feat.shape
-            feat = feat.reshape(B, self.channels // self.out_channel3d, self.out_channel3d, H, W)
+        # if self.out_channel3d is not None:
+        #     B, C, D, H, W = feat.shape
+        #     feat = feat.reshape(B, self.channels // self.out_channel3d, self.out_channel3d, H, W)
         output = self.conv_seg(feat)
         return output
 
@@ -273,7 +276,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         return losses
 
     def predict(self, inputs: Tuple[Tensor], batch_img_metas: List[dict],
-                test_cfg: ConfigType) -> List[Tensor]:
+                test_cfg: ConfigType) -> Tensor:
         """Forward function for prediction.
 
         Args:
@@ -286,7 +289,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             test_cfg (dict): The testing config.
 
         Returns:
-            List[Tensor]: Outputs segmentation logits map.
+           Tensor: Outputs segmentation logits map.
         """
         seg_logits = self.forward(inputs)
 

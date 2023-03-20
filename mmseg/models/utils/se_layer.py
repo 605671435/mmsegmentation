@@ -4,13 +4,14 @@ from mmcv.cnn import ConvModule
 from mmengine.utils import is_tuple_of
 
 from .make_divisible import make_divisible
+from mmseg.registry.registry import MODELS
 
-
+@MODELS.register_module()
 class SELayer(nn.Module):
     """Squeeze-and-Excitation Module.
 
     Args:
-        channels (int): The input (and output) channels of the SE layer.
+        in_channels (int): The input (and output) channels of the SE layer.
         ratio (int): Squeeze ratio in SELayer, the intermediate channel will be
             ``int(channels/ratio)``. Default: 16.
         conv_cfg (None or dict): Config dict for convolution layer.
@@ -25,7 +26,7 @@ class SELayer(nn.Module):
     """
 
     def __init__(self,
-                 channels,
+                 in_channels,
                  ratio=16,
                  conv_cfg=None,
                  act_cfg=(dict(type='ReLU'),
@@ -37,15 +38,15 @@ class SELayer(nn.Module):
         assert is_tuple_of(act_cfg, dict)
         self.global_avgpool = nn.AdaptiveAvgPool2d(1)
         self.conv1 = ConvModule(
-            in_channels=channels,
-            out_channels=make_divisible(channels // ratio, 8),
+            in_channels=in_channels,
+            out_channels=make_divisible(in_channels // ratio, 8),
             kernel_size=1,
             stride=1,
             conv_cfg=conv_cfg,
             act_cfg=act_cfg[0])
         self.conv2 = ConvModule(
-            in_channels=make_divisible(channels // ratio, 8),
-            out_channels=channels,
+            in_channels=make_divisible(in_channels // ratio, 8),
+            out_channels=in_channels,
             kernel_size=1,
             stride=1,
             conv_cfg=conv_cfg,

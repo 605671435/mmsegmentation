@@ -1,10 +1,35 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from mmcv.cnn import ConvModule
+from mmcv.cnn import ConvModule, build_plugin_layer
 from torch import nn
 from torch.utils import checkpoint as cp
 
 from .se_layer import SELayer
 
+def make_block_plugins(in_channels, plugins, position):
+    """make plugins for block.
+
+    Args:
+        in_channels (int): Input channels of plugin.
+        plugins (list[dict]): List of plugins cfg to build.
+
+    Returns:
+        list[str]: List of the names of plugin.
+    """
+    assert isinstance(plugins, list)
+    plugin_layers = []
+    for plugin in plugins:
+        plugin = plugin.copy()
+        pos = plugin.pop('position', '')
+        if pos == position:
+            _, layer = build_plugin_layer(
+                plugin['cfg'],
+                in_channels=in_channels)
+            plugin_layers.append(layer)
+
+    if len(plugin_layers) == 0:
+        return None
+    plugin_layers = nn.Sequential(*plugin_layers)
+    return plugin_layers
 
 class InvertedResidual(nn.Module):
     """InvertedResidual block for MobileNetV2.
@@ -38,6 +63,7 @@ class InvertedResidual(nn.Module):
                  conv_cfg=None,
                  norm_cfg=dict(type='BN'),
                  act_cfg=dict(type='ReLU6'),
+                 plugins=None,
                  with_cp=False,
                  **kwargs):
         super().__init__()
@@ -47,6 +73,8 @@ class InvertedResidual(nn.Module):
         self.with_cp = with_cp
         self.use_res_connect = self.stride == 1 and in_channels == out_channels
         hidden_dim = int(round(in_channels * expand_ratio))
+
+        plugin_layers0, plugin_layers1, plugin_layers2 = None, None, None
 
         layers = []
         if expand_ratio != 1:
@@ -59,7 +87,32 @@ class InvertedResidual(nn.Module):
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
                     **kwargs))
-        layers.extend([
+            if plugins is not None:
+                plugin_layers0 = make_block_plugins(
+                    in_channels=hidden_dim,
+                    plugins=plugins,
+                    position=0)
+                plugin_layers1 = make_block_plugins(
+                    in_channels=hidden_dim,
+                    plugins=plugins,
+                    position=1)
+                plugin_layers2 = make_block_plugins(
+                    in_channels=out_channels,
+                    plugins=plugins,
+                    position=2)
+                if plugin_layers0 is not None:
+                    layers.append(plugin_layers0)
+        elif plugins is not None:
+            plugin_layers0 = make_block_plugins(
+                in_channels=hidden_dim,
+                plugins=plugins,
+                position=0)
+            plugin_layers1 = make_block_plugins(
+                in_channels=out_channels,
+                plugins=plugins,
+                position=1)
+
+        layers.append(
             ConvModule(
                 in_channels=hidden_dim,
                 out_channels=hidden_dim,
@@ -71,7 +124,14 @@ class InvertedResidual(nn.Module):
                 conv_cfg=conv_cfg,
                 norm_cfg=norm_cfg,
                 act_cfg=act_cfg,
-                **kwargs),
+                **kwargs))
+
+        if plugin_layers0 is not None and expand_ratio == 1:
+            layers.append(plugin_layers0)
+        if plugin_layers1 is not None and expand_ratio != 1:
+            layers.append(plugin_layers1)
+
+        layers.append(
             ConvModule(
                 in_channels=hidden_dim,
                 out_channels=out_channels,
@@ -79,8 +139,13 @@ class InvertedResidual(nn.Module):
                 conv_cfg=conv_cfg,
                 norm_cfg=norm_cfg,
                 act_cfg=None,
-                **kwargs)
-        ])
+                **kwargs))
+
+        if plugin_layers1 is not None and expand_ratio == 1:
+            layers.append(plugin_layers1)
+        if plugin_layers2 is not None and expand_ratio != 1:
+            layers.append(plugin_layers2)
+
         self.conv = nn.Sequential(*layers)
 
     def forward(self, x):

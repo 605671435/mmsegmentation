@@ -1,15 +1,19 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import os.path as osp
 from collections import OrderedDict
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import torch
+from mmengine.dist import is_main_process
 from mmengine.evaluator import BaseMetric
 from mmengine.logging import MMLogger, print_log
+from mmengine.utils import mkdir_or_exist
+from PIL import Image
 from prettytable import PrettyTable
 
 from mmseg.registry import METRICS
-
+from mmengine.visualization import Visualizer
 
 @METRICS.register_module()
 class IoUMetric(BaseMetric):
@@ -27,6 +31,12 @@ class IoUMetric(BaseMetric):
         collect_device (str): Device name used for collecting results from
             different ranks during distributed training. Must be 'cpu' or
             'gpu'. Defaults to 'cpu'.
+        output_dir (str): The directory for output prediction. Defaults to
+            None.
+        format_only (bool): Only format result for results commit without
+            perform evaluation. It is useful when you want to save the result
+            to a specific format and submit it to the test server.
+            Defaults to False.
         prefix (str, optional): The prefix that will be added in the metric
             names to disambiguate homonymous metrics of different evaluators.
             If prefix is not provided in the argument, self.default_prefix
@@ -39,13 +49,20 @@ class IoUMetric(BaseMetric):
                  nan_to_num: Optional[int] = None,
                  beta: int = 1,
                  collect_device: str = 'cpu',
-                 prefix: Optional[str] = None) -> None:
+                 output_dir: Optional[str] = None,
+                 format_only: bool = False,
+                 prefix: Optional[str] = None,
+                 **kwargs) -> None:
         super().__init__(collect_device=collect_device, prefix=prefix)
 
         self.ignore_index = ignore_index
         self.metrics = iou_metrics
         self.nan_to_num = nan_to_num
         self.beta = beta
+        self.output_dir = output_dir
+        if self.output_dir and is_main_process():
+            mkdir_or_exist(self.output_dir)
+        self.format_only = format_only
 
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         """Process one batch of data and data_samples.
@@ -61,10 +78,27 @@ class IoUMetric(BaseMetric):
         if data_samples[0].get('pred_sem_seg_3d') is not None:
             for data_sample in data_samples:
                 pred_label = data_sample['pred_sem_seg_3d']['data'].squeeze()
-                label = data_sample['gt_sem_seg_3d']['data'].squeeze().to(pred_label)
-                self.results.append(
-                    self.intersect_and_union(pred_label, label, num_classes,
-                                             self.ignore_index))
+                # format_only always for test dataset without ground truth
+                if not self.format_only:
+                    label = data_sample['gt_sem_seg']['data'].squeeze().to(
+                        pred_label)
+                    self.results.append(
+                        self.intersect_and_union(pred_label, label, num_classes,
+                                                 self.ignore_index))
+                # format_result
+                if self.output_dir is not None:
+                    basename = osp.splitext(osp.basename(
+                        data_sample['img_path']))[0]
+                    png_filename = osp.abspath(
+                        osp.join(self.output_dir, f'{basename}.png'))
+                    output_mask = pred_label.cpu().numpy()
+                    # The index range of official ADE20k dataset is from 0 to 150.
+                    # But the index range of output is from 0 to 149.
+                    # That is because we set reduce_zero_label=True.
+                    if data_sample.get('reduce_zero_label', False):
+                        output_mask = output_mask + 1
+                    output = Image.fromarray(output_mask.astype(np.uint8))
+                    output.save(png_filename)
         else:
             for data_sample in data_samples:
                 pred_label = data_sample['pred_sem_seg']['data'].squeeze()
@@ -86,6 +120,12 @@ class IoUMetric(BaseMetric):
                 mRecall.
         """
         logger: MMLogger = MMLogger.get_current_instance()
+
+        if self.format_only:
+            logger.info(f'results are saved to {osp.dirname(self.output_dir)}')
+            return OrderedDict()
+
+        visualizer = Visualizer.get_current_instance()
 
         # convert list of tuples to tuple of lists, e.g.
         # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to
@@ -121,6 +161,18 @@ class IoUMetric(BaseMetric):
             ret_metric: np.round(ret_metric_value * 100, 2)
             for ret_metric, ret_metric_value in ret_metrics.items()
         })
+
+        if ret_metrics_class.get('Dice') is not None:
+            vis_metrics_class = OrderedDict({
+                f'Dice ({class_key})': metric_value
+                for class_key, metric_value in zip(class_names, ret_metrics_class['Dice'])
+            })
+        else:
+            vis_metrics_class = OrderedDict({
+                f'IoU ({class_key})': metric_value
+                for class_key, metric_value in zip(class_names, ret_metrics_class['IoU'])
+            })
+
         ret_metrics_class.update({'Class': class_names})
         ret_metrics_class.move_to_end('Class', last=False)
         class_table_data = PrettyTable()
@@ -129,6 +181,7 @@ class IoUMetric(BaseMetric):
 
         print_log('per class results:', logger)
         print_log('\n' + class_table_data.get_string(), logger=logger)
+        visualizer.add_scalars(vis_metrics_class)
 
         return metrics
 
@@ -245,7 +298,6 @@ class IoUMetric(BaseMetric):
                 ret_metrics['Fscore'] = f_value
                 ret_metrics['Precision'] = precision
                 ret_metrics['Recall'] = recall
-
         ret_metrics = {
             metric: value.numpy()
             for metric, value in ret_metrics.items()

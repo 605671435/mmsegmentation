@@ -2,13 +2,12 @@
 import warnings
 
 import torch.nn as nn
-from mmcv.cnn import ConvModule
+from mmcv.cnn import ConvModule, build_plugin_layer
 from mmengine.model import BaseModule
 from torch.nn.modules.batchnorm import _BatchNorm
 
 from mmseg.registry import MODELS
 from ..utils import InvertedResidual, make_divisible
-
 
 @MODELS.register_module()
 class MobileNetV2(BaseModule):
@@ -61,6 +60,7 @@ class MobileNetV2(BaseModule):
                  act_cfg=dict(type='ReLU6'),
                  norm_eval=False,
                  with_cp=False,
+                 plugins=None,
                  pretrained=None,
                  init_cfg=None):
         super().__init__(init_cfg)
@@ -104,6 +104,7 @@ class MobileNetV2(BaseModule):
         self.act_cfg = act_cfg
         self.norm_eval = norm_eval
         self.with_cp = with_cp
+        self.plugins = plugins
 
         self.in_channels = make_divisible(32 * widen_factor, 8)
 
@@ -124,18 +125,23 @@ class MobileNetV2(BaseModule):
             stride = self.strides[i]
             dilation = self.dilations[i]
             out_channels = make_divisible(channel * widen_factor, 8)
+            if plugins is not None:
+                stage_plugins = self.make_stage_plugins(plugins, i)
+            else:
+                stage_plugins = None
             inverted_res_layer = self.make_layer(
                 out_channels=out_channels,
                 num_blocks=num_blocks,
                 stride=stride,
                 dilation=dilation,
+                plugins=stage_plugins,
                 expand_ratio=expand_ratio)
             layer_name = f'layer{i + 1}'
             self.add_module(layer_name, inverted_res_layer)
             self.layers.append(layer_name)
 
     def make_layer(self, out_channels, num_blocks, stride, dilation,
-                   expand_ratio):
+                   expand_ratio, plugins):
         """Stack InvertedResidual blocks to build a layer for MobileNetV2.
 
         Args:
@@ -158,10 +164,47 @@ class MobileNetV2(BaseModule):
                     conv_cfg=self.conv_cfg,
                     norm_cfg=self.norm_cfg,
                     act_cfg=self.act_cfg,
+                    plugins=plugins,
                     with_cp=self.with_cp))
             self.in_channels = out_channels
 
         return nn.Sequential(*layers)
+
+    def make_stage_plugins(self, plugins, stage_idx):
+        """make plugins for ResNet 'stage_idx'th stage .
+
+        Currently we support to insert 'context_block',
+        'empirical_attention_block', 'nonlocal_block' into the backbone like
+        ResNet/ResNeXt. They could be inserted after conv1/conv2/conv3 of
+        Bottleneck.
+
+        Suppose 'stage_idx=0', the structure of blocks in the stage would be:
+            conv1-> conv2->conv3->yyy->zzz1->zzz2
+        Suppose 'stage_idx=1', the structure of blocks in the stage would be:
+            conv1-> conv2->xxx->conv3->yyy->zzz1->zzz2
+
+        If stages is missing, the plugin would be applied to all stages.
+
+        Args:
+            plugins (list[dict]): List of plugins cfg to build. The postfix is
+                required if multiple same type plugins are inserted.
+            stage_idx (int): Index of stage to build
+
+        Returns:
+            list[dict]: Plugins for current stage
+        """
+        stage_plugins = []
+        for plugin in plugins:
+            plugin = plugin.copy()
+            stages = plugin.pop('stages', None)
+            assert stages is None or len(stages) == len(self.arch_settings)
+            # whether to insert plugin into current stage
+            if stages is None or stages[stage_idx]:
+                stage_plugins.append(plugin)
+
+        if len(stage_plugins) == 0:
+            return None
+        return stage_plugins
 
     def forward(self, x):
         x = self.conv1(x)

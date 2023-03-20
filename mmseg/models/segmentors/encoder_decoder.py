@@ -120,7 +120,7 @@ class EncoderDecoder(BaseSegmentor):
         return x
 
     def encode_decode(self, inputs: Tensor,
-                      batch_img_metas: List[dict]) -> List[Tensor]:
+                      batch_img_metas: List[dict]) -> Tensor:
         """Encode images with backbone and decode into a semantic segmentation
         map of the same size as input."""
         x = self.extract_feat(inputs)
@@ -348,7 +348,7 @@ class EncoderDecoder(BaseSegmentor):
                     batch_img_metas[0]['img_shape'] = crop_img.shape[2:]
                     # the output of encode_decode is seg logits tensor map
                     # with shape [N, C, H, W]
-                    crop_img = crop_img.squeeze(1)
+                    # crop_img = crop_img.squeeze(1)
                     crop_seg_logit = self.encode_decode(crop_img, batch_img_metas)
                     preds += F.pad(crop_seg_logit,
                                    (int(x1), int(preds.shape[4] - x2),

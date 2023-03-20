@@ -6,7 +6,6 @@ from mmcv.cnn import ConvModule
 from mmseg.registry import MODELS
 from .decode_head import BaseDecodeHead
 
-
 @MODELS.register_module()
 class FCNHead(BaseDecodeHead):
     """Fully Convolution Networks for Semantic Segmentation.

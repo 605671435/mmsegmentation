@@ -66,15 +66,26 @@ class ASPPHead(BaseDecodeHead):
         super().__init__(**kwargs)
         assert isinstance(dilations, (list, tuple))
         self.dilations = dilations
-        self.image_pool = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            ConvModule(
-                self.in_channels,
-                self.channels,
-                1,
-                conv_cfg=self.conv_cfg,
-                norm_cfg=self.norm_cfg,
-                act_cfg=self.act_cfg))
+        if self.out_channel3d is not None:
+            self.image_pool = nn.Sequential(
+                nn.AdaptiveAvgPool3d(1),
+                ConvModule(
+                    self.in_channels,
+                    self.channels,
+                    1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    act_cfg=self.act_cfg))
+        else:
+            self.image_pool = nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),
+                ConvModule(
+                    self.in_channels,
+                    self.channels,
+                    1,
+                    conv_cfg=self.conv_cfg,
+                    norm_cfg=self.norm_cfg,
+                    act_cfg=self.act_cfg))
         self.aspp_modules = ASPPModule(
             dilations,
             self.in_channels,
@@ -103,13 +114,22 @@ class ASPPHead(BaseDecodeHead):
                 H, W) which is feature map for last layer of decoder head.
         """
         x = self._transform_inputs(inputs)
-        aspp_outs = [
-            resize(
-                self.image_pool(x),
-                size=x.size()[2:],
-                mode='bilinear',
-                align_corners=self.align_corners)
-        ]
+        if self.out_channel3d is not None:
+            aspp_outs = [
+                resize(
+                    self.image_pool(x),
+                    size=x.size()[2:],
+                    mode='trilinear',
+                    align_corners=self.align_corners)
+            ]
+        else:
+            aspp_outs = [
+                resize(
+                    self.image_pool(x),
+                    size=x.size()[2:],
+                    mode='bilinear',
+                    align_corners=self.align_corners)
+            ]
         aspp_outs.extend(self.aspp_modules(x))
         aspp_outs = torch.cat(aspp_outs, dim=1)
         feats = self.bottleneck(aspp_outs)

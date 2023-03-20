@@ -3,13 +3,12 @@ import warnings
 
 import torch.nn as nn
 import torch.utils.checkpoint as cp
-from mmcv.cnn import ConvModule, build_activation_layer, build_norm_layer
+from mmcv.cnn import ConvModule, build_activation_layer, build_norm_layer, build_plugin_layer
 from mmengine.model import BaseModule
 from mmengine.utils.dl_utils.parrots_wrapper import _BatchNorm
 
 from mmseg.registry import MODELS
 from ..utils import UpConvBlock, Upsample
-
 
 class BasicConvBlock(nn.Module):
     """Basic convolutional block for UNet.
@@ -55,12 +54,32 @@ class BasicConvBlock(nn.Module):
                  plugins=None):
         super().__init__()
         assert dcn is None, 'Not implemented yet.'
-        assert plugins is None, 'Not implemented yet.'
+
+        self.plugins = plugins
+        self.with_plugins = plugins is not None
 
         self.with_cp = with_cp
         convs = []
+
+        if self.with_plugins:
+            # collect plugins for conv1/conv2/conv3
+            self.after_conv1_plugins = [
+                plugin['cfg'] for plugin in plugins
+                if plugin['position'] == 'after_conv1'
+            ]
+            self.after_conv2_plugins = [
+                plugin['cfg'] for plugin in plugins
+                if plugin['position'] == 'after_conv2'
+            ]
+        if self.with_plugins:
+            self.after_conv1_plugin_names = self.make_block_plugins(
+                out_channels, self.after_conv1_plugins)
+            self.after_conv2_plugin_names = self.make_block_plugins(
+                out_channels, self.after_conv2_plugins)
+
         for i in range(num_convs):
-            convs.append(
+            conv_module = []
+            conv_module.append(
                 ConvModule(
                     in_channels=in_channels if i == 0 else out_channels,
                     out_channels=out_channels,
@@ -70,9 +89,47 @@ class BasicConvBlock(nn.Module):
                     padding=1 if i == 0 else dilation,
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg,
-                    act_cfg=act_cfg))
+                    act_cfg=act_cfg)
+            )
 
+            if self.with_plugins:
+                if i == 0:
+                    for name in self.after_conv1_plugin_names:
+                        plugin_module = getattr(self, name)
+                    conv_module.append(plugin_module)
+                if i == 1:
+                    for name in self.after_conv2_plugin_names:
+                        plugin_module = getattr(self, name)
+                    conv_module.append(plugin_module)
+
+            conv_block = nn.Sequential(*conv_module)
+            convs.append(
+                conv_block
+            )
         self.convs = nn.Sequential(*convs)
+
+    def make_block_plugins(self, in_channels, plugins):
+        """make plugins for block.
+
+        Args:
+            in_channels (int): Input channels of plugin.
+            plugins (list[dict]): List of plugins cfg to build.
+
+        Returns:
+            list[str]: List of the names of plugin.
+        """
+        assert isinstance(plugins, list)
+        plugin_names = []
+        for plugin in plugins:
+            plugin = plugin.copy()
+            name, layer = build_plugin_layer(
+                plugin,
+                in_channels=in_channels,
+                postfix=plugin.pop('postfix', ''))
+            assert not hasattr(self, name), f'duplicate plugin {name}'
+            self.add_module(name, layer)
+            plugin_names.append(name)
+        return plugin_names
 
     def forward(self, x):
         """Forward function."""
@@ -320,7 +377,6 @@ class UNet(BaseModule):
             raise TypeError('pretrained must be a str or None')
 
         assert dcn is None, 'Not implemented yet.'
-        assert plugins is None, 'Not implemented yet.'
         assert len(strides) == num_stages, \
             'The length of strides should be equal to num_stages, '\
             f'while the strides is {strides}, the length of '\
@@ -356,12 +412,19 @@ class UNet(BaseModule):
         self.downsamples = downsamples
         self.norm_eval = norm_eval
         self.base_channels = base_channels
+        self.plugins = plugins
 
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
 
         for i in range(num_stages):
             enc_conv_block = []
+
+            if plugins is not None:
+                stage_plugins = self.make_stage_plugins(plugins, i)
+            else:
+                stage_plugins = None
+
             if i != 0:
                 if strides[i] == 1 and downsamples[i - 1]:
                     enc_conv_block.append(nn.MaxPool2d(kernel_size=2))
@@ -395,7 +458,7 @@ class UNet(BaseModule):
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
                     dcn=None,
-                    plugins=None))
+                    plugins=stage_plugins))
             self.encoder.append(nn.Sequential(*enc_conv_block))
             in_channels = base_channels * 2**i
 
@@ -434,3 +497,56 @@ class UNet(BaseModule):
             f'downsample rate {whole_downsample_rate}, when num_stages is '\
             f'{self.num_stages}, strides is {self.strides}, and downsamples '\
             f'is {self.downsamples}.'
+
+    def make_stage_plugins(self, plugins, stage_idx):
+        """make plugins for ResNet 'stage_idx'th stage .
+
+        Currently we support to insert 'context_block',
+        'empirical_attention_block', 'nonlocal_block' into the backbone like
+        ResNet/ResNeXt. They could be inserted after conv1/conv2/conv3 of
+        Bottleneck.
+
+        An example of plugins format could be :
+        >>> plugins=[
+        ...     dict(cfg=dict(type='xxx', arg1='xxx'),
+        ...          stages=(False, True, True, True),
+        ...          position='after_conv2'),
+        ...     dict(cfg=dict(type='yyy'),
+        ...          stages=(True, True, True, True),
+        ...          position='after_conv3'),
+        ...     dict(cfg=dict(type='zzz', postfix='1'),
+        ...          stages=(True, True, True, True),
+        ...          position='after_conv3'),
+        ...     dict(cfg=dict(type='zzz', postfix='2'),
+        ...          stages=(True, True, True, True),
+        ...          position='after_conv3')
+        ... ]
+        >>> self = ResNet(depth=18)
+        >>> stage_plugins = self.make_stage_plugins(plugins, 0)
+        >>> assert len(stage_plugins) == 3
+
+        Suppose 'stage_idx=0', the structure of blocks in the stage would be:
+            conv1-> conv2->conv3->yyy->zzz1->zzz2
+        Suppose 'stage_idx=1', the structure of blocks in the stage would be:
+            conv1-> conv2->xxx->conv3->yyy->zzz1->zzz2
+
+        If stages is missing, the plugin would be applied to all stages.
+
+        Args:
+            plugins (list[dict]): List of plugins cfg to build. The postfix is
+                required if multiple same type plugins are inserted.
+            stage_idx (int): Index of stage to build
+
+        Returns:
+            list[dict]: Plugins for current stage
+        """
+        stage_plugins = []
+        for plugin in plugins:
+            plugin = plugin.copy()
+            stages = plugin.pop('stages', None)
+            assert stages is None or len(stages) == self.num_stages
+            # whether to insert plugin into current stage
+            if stages is None or stages[stage_idx]:
+                stage_plugins.append(plugin)
+
+        return stage_plugins

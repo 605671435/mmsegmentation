@@ -1,11 +1,11 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os.path as osp
 import warnings
-from typing import Sequence
+from typing import Optional, Sequence
 from PIL import Image
 import SimpleITK as sitk
 import os
-import shutil
+from mmengine.logging import MMLogger, print_log
 import numpy as np
 import mmcv
 import torch
@@ -16,7 +16,7 @@ from mmengine.dist import master_only
 from mmseg.registry import HOOKS
 from mmseg.structures import SegDataSample
 from mmseg.visualization import SegLocalVisualizer
-from collections import OrderedDict
+from mmengine.visualization.visualizer import Visualizer
 def arr_to_img(arr):
     min = np.amin(arr)
     max = np.amax(arr)
@@ -42,9 +42,9 @@ class SegVisualizationHook(Hook):
         interval (int): The interval of visualization. Defaults to 50.
         show (bool): Whether to display the drawn image. Default to False.
         wait_time (float): The interval of show (s). Defaults to 0.
-        file_client_args (dict): Arguments to instantiate a FileClient.
+        backend_args (dict, Optional): Arguments to instantiate a FileClient.
             See :class:`mmengine.fileio.FileClient` for details.
-            Defaults to ``dict(backend='disk')``.
+            Defaults to ``None``.
     """
 
     def __init__(self,
@@ -55,7 +55,7 @@ class SegVisualizationHook(Hook):
                  interval: int = 50,
                  show: bool = False,
                  wait_time: float = 0.,
-                 file_client_args: dict = dict(backend='disk')):
+                 backend_args: dict = None):
         self._visualizer: SegLocalVisualizer = \
             SegLocalVisualizer.get_current_instance()
         self.interval = interval
@@ -69,7 +69,7 @@ class SegVisualizationHook(Hook):
                           'needs to be excluded.')
 
         self.wait_time = wait_time
-        self.file_client_args = file_client_args.copy()
+        self.file_client_args = backend_args.copy()
         self.file_client = None
         self.draw = draw
         self.draw_table = draw_table
@@ -127,7 +127,7 @@ class SegVisualizationHook(Hook):
                     wait_time=self.wait_time,
                     step=runner.iter)
 
-    def compute_metric(self, pred_sem_seg, gt_sem_seg, num_classes):
+    def compute_metric(self, pred_sem_seg, gt_sem_seg, num_classes, metric='Dice'):
         intersect = pred_sem_seg[pred_sem_seg == gt_sem_seg]
         area_intersect = torch.histc(
             intersect.float(), bins=(num_classes), min=0,
@@ -138,13 +138,18 @@ class SegVisualizationHook(Hook):
         area_label = torch.histc(
             gt_sem_seg.float(), bins=(num_classes), min=0,
             max=num_classes - 1).cpu()
-        # area_union = area_pred_label + area_label - area_intersect
+
+        if metric == 'mIoU':
+            area_union = area_pred_label + area_label - area_intersect
+            iou = area_intersect / area_union
+
+            return np.round(iou.numpy() * 100, 2)
 
         dice = 2 * area_intersect / (
                 area_pred_label + area_label)
         acc = area_intersect / area_label
 
-        return dice, acc
+        return np.round(dice.numpy() * 100, 2), np.round(acc.numpy() * 100, 2)
 
     @master_only
     def before_run(self, runner) -> None:
@@ -154,22 +159,22 @@ class SegVisualizationHook(Hook):
             vis_backend = runner.visualizer._vis_backends.get('WandbVisBackend')
             self.wandb = vis_backend.experiment
 
+            logger: MMLogger = MMLogger.get_current_instance()
+
             if hasattr(runner.train_dataloader.dataset, 'METAINFO'):
                 self.class_info = runner.train_dataloader.dataset.METAINFO['classes']
             else:
                 self.class_info = runner.train_dataloader.dataset.metainfo['classes']
 
-            self.metrics_class = [[]
-                                  for _ in self.class_info]
-
             self.num_classes = len(self.class_info)
 
             if self.draw_table is True:
-                columns = ["id", "iter", "image", "gt", "pred", "dice", "acc"]
-                print('INFO***create a wandb table***INFO')
+                columns = ["id", "iter", "image", "gt", "pred"]
+                columns.extend(["%_" + c for c in self.class_info])
+                print_log('Create a wandb table.', logger)
                 self.test_table = self.wandb.Table(columns=columns)
 
-                class_id = list(range(self.num_classes - 1)) + [255]
+                class_id = list(range(self.num_classes))
                 self.class_set = self.wandb.Classes([{'name': name, 'id': id}
                                            for name, id in zip(self.class_info, class_id)])
             if self.draw_ct is True:
@@ -177,18 +182,18 @@ class SegVisualizationHook(Hook):
                 if not os.path.exists(self.pred_path):
                     os.makedirs(self.pred_path)
                 columns = ["id", "iter", "gt", "pred", "dice", "acc"]
-                print('INFO***create a wandb table***INFO')
+                print_log('Create a wandb table.', logger)
                 self.test_table = self.wandb.Table(columns=columns)
 
-    @master_only
-    def after_val_iter(self,
-                       runner,
-                       batch_idx: int,
-                       data_batch: dict,
-                       outputs) -> None:
+    def add_data(self,
+                 runner,
+                 batch_idx: int,
+                 data_batch: dict,
+                 outputs):
         if self.every_n_inner_iters(batch_idx, self.interval):
-            if self.draw_ct is True:
-                for output in outputs:
+            for output in outputs:
+                metric = runner.val_evaluator.metrics[0].metrics[0]
+                if self.draw_ct is True:
                     img_path = output.img_path.split('/')[-1].split('.')[0]
 
                     gt_sem_seg_arr = arr_to_img(output.gt_sem_seg_3d.data[0].cpu().permute(1, 2, 0).numpy().astype('uint8'))
@@ -205,13 +210,9 @@ class SegVisualizationHook(Hook):
                     pred_gif_filename = os.path.join(runner.work_dir, 'pred_tmp.gif')
                     pred_gif[0].save(pred_gif_filename, save_all=True, append_images=pred_gif, duration=0.1)
 
-                    dice, acc = self.compute_metric(outputs[0].pred_sem_seg_3d.data, outputs[0].gt_sem_seg_3d.data,
+                    dice, acc = self.compute_metric(outputs[0].pred_sem_seg_3d.data.squeeze(),
+                                                    outputs[0].gt_sem_seg_3d.data.squeeze(),
                                                     self.num_classes)
-                    for i, _ in enumerate(self.class_info):
-                        self.metrics_class[i].append(dice[i])   #type: ignore
-                    dice = np.round(dice.numpy() * 100, 2)
-                    acc = np.round(acc.numpy() * 100, 2)
-
                     dices = []
                     accs = []
                     form = "{}:{:.2f}, "
@@ -223,62 +224,77 @@ class SegVisualizationHook(Hook):
                         accs.append(acc[i])
                         metrics_pos += form
                     metrics_pos = "".join(list(metrics_pos)[:-2])
-                    print('INFO***add data to table***INFO')
+                    logger: MMLogger = MMLogger.get_current_instance()
+                    print_log('Add data to wandb table.', logger)
                     self.test_table.add_data(img_path,
                                              runner.iter,
                                              self.wandb.Video(gt_gif_filename),
                                              self.wandb.Video(pred_gif_filename),
                                              metrics_pos.format(*dices),
                                              metrics_pos.format(*accs))
-            elif self.draw_table is True:
-
-                for output in outputs:
+                elif self.draw_table is True:
                     img_path = output.img_path.split('/')[-1].split('.')[0]
                     ori_img = data_batch['inputs'][0].permute(1, 2, 0).cpu().numpy().astype('uint8')
 
-                    gt_sem_seg = output.gt_sem_seg.data.cpu().permute(1, 2, 0).numpy().astype('uint8') * 255
+                    gt_sem_seg = output.gt_sem_seg.data.cpu().permute(1, 2, 0).numpy().astype('uint8')
                     gt_sem_seg = mmcv.imresize(gt_sem_seg[..., -1],
                                                (ori_img.shape[1], ori_img.shape[0]),
                                                interpolation='nearest',
                                                backend='pillow')
-                    pred_sem_seg = output.pred_sem_seg.data.cpu().permute(1, 2, 0).numpy().astype('uint8') * 255
+                    pred_sem_seg = output.pred_sem_seg.data.cpu().permute(1, 2, 0).numpy().astype('uint8')
                     pred_sem_seg = mmcv.imresize(pred_sem_seg[..., -1],
                                                  (ori_img.shape[1], ori_img.shape[0]),
                                                  interpolation='nearest',
                                                  backend='pillow')
 
-                    dice, acc = self.compute_metric(outputs[0].pred_sem_seg.data, outputs[0].gt_sem_seg.data, self.num_classes)
-                    for i, _ in enumerate(self.class_info):
-                        self.metrics_class[i].append(dice[i])   #type: ignore
-                    dice = np.round(dice.numpy() * 100, 2)
-                    acc = np.round(acc.numpy() * 100, 2)
+                    if metric == 'mIoU':
+                        metric = self.compute_metric(outputs[0].pred_sem_seg.data,
+                                                    outputs[0].gt_sem_seg.data,
+                                                    self.num_classes,
+                                                    metric)
+                    else:
+                        metric, acc = self.compute_metric(outputs[0].pred_sem_seg.data,
+                                                        outputs[0].gt_sem_seg.data,
+                                                        self.num_classes)
 
                     annotated = self.wandb.Image(ori_img, classes=self.class_set,
                                             masks={"ground_truth": {"mask_data": gt_sem_seg}})
                     predicted = self.wandb.Image(ori_img, classes=self.class_set,
                                             masks={"predicted_mask": {"mask_data": pred_sem_seg}})
-                    print('INFO***add data to table***INFO')
+                    logger: MMLogger = MMLogger.get_current_instance()
+                    print_log('Add data to wandb table.', logger)
 
-                    self.test_table.add_data(img_path,
-                                             runner.iter,
-                                             self.wandb.Image(ori_img),
-                                             annotated,
-                                             predicted,
-                                             "{}:{:.2f}, {}:{:.2f}".format(self.class_info[0], dice[0], self.class_info[1], dice[1]),
-                                             "{}:{:.2f}, {}:{:.2f}".format(self.class_info[0], acc[0], self.class_info[1], acc[1]))
+                    row = [img_path, runner.iter, self.wandb.Image(ori_img), annotated, predicted]
+                    row.extend(metric)
+
+                    self.test_table.add_data(*row)
 
     @master_only
-    def after_val_epoch(self,
-                        runner,
-                        metrics) -> None:
-        metrics_class = OrderedDict({
-            f'Dice ({class_key})': np.round(np.nanmean(metric_value) * 100, 2)
-            for class_key, metric_value in zip(self.class_info, self.metrics_class)
-        })
-        self.wandb.log(metrics_class)
+    def after_val_iter(self,
+                       runner,
+                       batch_idx: int,
+                       data_batch: dict,
+                       outputs) -> None:
+        self.add_data(runner,
+                 batch_idx,
+                 data_batch,
+                 outputs)
 
+    @master_only
+    def after_test_iter(self,
+                        runner,
+                        batch_idx: int,
+                        data_batch: dict,
+                        outputs) -> None:
+        self.add_data(runner,
+                 batch_idx,
+                 data_batch,
+                 outputs)
     @master_only
     def after_run(self, runner) -> None:
         if self.draw_table is True or self.draw_ct is True:
-            print('INFO***log table to wandb***INFO')
+            logger: MMLogger = MMLogger.get_current_instance()
+            print_log('Log table to wandb.', logger)
             self.wandb.log({"test_predictions": self.test_table})
+        visualizer = Visualizer.get_current_instance()
+        visualizer.close()

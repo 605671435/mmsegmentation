@@ -1,18 +1,19 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
-from typing import Dict, Sequence, Tuple, Union
-
+from typing import Dict, Iterable, Sequence, Tuple, Union, Optional, List
+import warnings
 import cv2
 import mmcv
 import numpy as np
 from mmcv.transforms.base import BaseTransform
 from mmcv.transforms.utils import cache_randomness
-from mmengine.utils import is_tuple_of
+from mmengine.utils import is_tuple_of, is_list_of
 from numpy import random
 
 from mmseg.datasets.dataset_wrappers import MultiImageMixDataset
 from mmseg.registry import TRANSFORMS
 
+Number = Union[int, float]
 
 @TRANSFORMS.register_module()
 class ResizeToMultiple(BaseTransform):
@@ -500,6 +501,494 @@ class BioPatchCrop(BaseTransform):
 
     def __repr__(self):
         return self.__class__.__name__ + f'(crop_size={self.crop_size})'
+
+@TRANSFORMS.register_module()
+class MedPad(BaseTransform):
+    """Pad the image & segmentation map. There are three padding modes: (1) pad
+    to a fixed size and (2) pad to the minimum size that is divisible by some
+    number. Required Keys:
+    Required Keys:
+    - img
+    - gt_seg_map (optional)
+    Modified Keys:
+    - img
+    - gt_seg_map
+    - img_shape
+    Added Keys:
+    - pad_shape
+    - pad_fixed_size
+    - pad_size_divisor
+    Args:
+        size (tuple, optional): Fixed padding size.
+            Expected padding shape (w, h). Defaults to None.
+        size_divisor (int, optional): The divisor of padded size. Defaults to
+            None.
+        pad_val (Number | dict[str, Number], optional): Padding value for if
+            the pad_mode is "constant". If it is a single number, the value
+            to pad the image is the number and to pad the semantic
+            segmentation map is 0. If it is a dict, it should have the
+            following keys:
+            - img: The value to pad the image.
+            - seg: The value to pad the semantic segmentation map.
+            Defaults to dict(img=0, seg=0).
+        padding_mode (str): Type of padding. Should be: constant, edge,
+            reflect or symmetric. Defaults to 'constant'.
+            - constant: pads with a constant value, this value is specified
+              with pad_val.
+            - edge: pads with the last value at the edge of the image.
+            - reflect: pads with reflection of image without repeating the last
+              value on the edge. For example, padding [1, 2, 3, 4] with 2
+              elements on both sides in reflect mode will result in
+              [3, 2, 1, 2, 3, 4, 3, 2].
+            - symmetric: pads with reflection of image repeating the last value
+              on the edge. For example, padding [1, 2, 3, 4] with 2 elements on
+              both sides in symmetric mode will result in
+              [2, 1, 1, 2, 3, 4, 4, 3]
+    """
+
+    def __init__(self,
+                 size: Optional[Tuple[int, int, int]] = None,
+                 size_divisor: Optional[int] = None,
+                 pad_val: Union[Number, dict] = dict(img=0, seg=0),
+                 padding_mode: str = 'constant') -> None:
+
+        self.size = size
+        self.size_divisor = size_divisor
+        if isinstance(pad_val, int):
+            pad_val = dict(img=pad_val, seg=0)
+        assert isinstance(pad_val, dict), 'pad_val '
+        self.pad_val = pad_val
+
+        assert size is not None or size_divisor is not None, \
+            'only one of size and size_divisor should be valid'
+        assert size is None or size_divisor is None
+
+        assert padding_mode in ['constant', 'edge', 'reflect', 'symmetric']
+
+        self.padding_mode = padding_mode
+
+    def _pad_img(self, results: dict) -> None:
+        """Pad images according to ``self.size``."""
+
+        pad_val = self.pad_val.get('img', 0)
+
+        size = None
+        if self.size_divisor is not None:
+            if size is None:
+                size = (results['img'].shape[1], results['img'].shape[2],
+                        results['img'].shape[3])
+            pad_z = int(np.ceil(
+                size[0] / self.size_divisor)) * self.size_divisor
+            pad_x = int(np.ceil(
+                size[1] / self.size_divisor)) * self.size_divisor
+            pad_y = int(np.ceil(
+                size[2] / self.size_divisor)) * self.size_divisor
+            size = (pad_z, pad_x, pad_y)
+        elif self.size is not None:
+            size = self.size
+
+        padded_img = self._to_pad(
+            results['img'],
+            shape=size,
+            pad_val=pad_val,
+            padding_mode=self.padding_mode)
+
+        results['img'] = padded_img
+        results['pad_shape'] = padded_img.shape
+        results['pad_fix_size'] = self.size
+        results['pad_size_divisor'] = self.size_divisor
+        results['medimg__shape'] = padded_img.shape[1:]
+
+    def _pad_seg(self, results: dict) -> None:
+        """Pad semantic segmentation map according to
+        ``results['pad_shape']``."""
+        if results.get('gt_seg_map', None) is not None:
+            pad_val = self.pad_val.get('seg', 0)
+
+            results['gt_seg_map'] = self._to_pad(
+                results['gt_seg_map'],
+                shape=results['pad_shape'][1:],
+                pad_val=pad_val,
+                padding_mode=self.padding_mode)
+
+    @staticmethod
+    def _to_pad(
+        img: np.ndarray,
+        *,
+        shape: Optional[Tuple[int, int, int]] = None,
+        pad_val: Union[float, List] = 0,
+        padding_mode: str = 'constant',
+    ) -> np.ndarray:
+        """Pad the given 3d image to a certain shape with specified padding
+        mode and padding value.
+        Args:
+            img (ndarray): Image to be padded.
+            shape (tuple[int]): Expected padding shape (z, x, y).
+                Default: None.
+            pad_val (Number | Sequence[Number]): Values to be filled
+                in padding areas when padding_mode is 'constant'. Default: 0.
+            padding_mode (str): Type of padding. Should be: constant, edge,
+                reflect or symmetric. Default: constant.
+                - constant: pads with a constant value, this value
+                is specified with pad_val.
+                - edge: pads with the last value at the edge of the image.
+                - reflect: pads with reflection of image without repeating
+                the last value on the edge. For example, padding [1, 2, 3, 4]
+                with 2 elements on both sides in reflect mode will result in
+                [3, 2, 1, 2, 3, 4, 3, 2].
+                - symmetric: pads with reflection of image repeating the last
+                value on the edge. For example, padding [1, 2, 3, 4] with 2
+                elements on both sides in symmetric mode will result in
+                [2, 1, 1, 2, 3, 4, 4, 3]
+        Returns:
+            ndarray: The padded image.
+        """
+        # check padding mode
+        assert padding_mode in ['constant', 'edge', 'reflect', 'symmetric']
+
+        if padding_mode != 'constant' and pad_val != 0:
+            warnings.warn('``pad_val`` is only support in mode=``constant``,'
+                          'the pad_val will be ignore in other padding_mode')
+
+        if shape is not None:
+            if not (is_tuple_of(shape, int) and len(shape) == 3):
+                raise ValueError('Expected padding shape must be a tuple of 3'
+                                 f'int element, But receive: {shape}')
+            pad_width = []
+            for i, sp_i in enumerate(shape):
+                if len(img.shape) == 3:
+                    width = max(sp_i - img.shape[:][i], 0)
+                else:
+                    width = max(sp_i - img.shape[1:][i], 0)
+                pad_width.append((width // 2, width - (width // 2)))
+            if len(img.shape) == 4:
+                pad_width = [(0, 0)] + pad_width
+
+        if padding_mode == 'constant':
+            img = np.pad(
+                img,
+                pad_width=pad_width,
+                mode='constant',
+                constant_values=pad_val)
+        else:
+            img = np.pad(img, pad_width=pad_width, mode=padding_mode)
+
+        return img
+
+    def transform(self, results: dict) -> dict:
+        """Call function to pad images, masks, semantic segmentation maps.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Updated result dict.
+        """
+        self._pad_img(results)
+        self._pad_seg(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'size={self.size}, '
+        repr_str += f'size_divisor={self.size_divisor}, '
+        repr_str += f'pad_to_square={self.pad_to_square}, '
+        repr_str += f'pad_val={self.pad_val}), '
+        repr_str += f'padding_mode={self.padding_mode})'
+        return
+
+@TRANSFORMS.register_module()
+class ZNormalization(BaseTransform):
+    """z_normalization.
+    # This class is modified from `MONAI.
+    # https://github.com/Project-MONAI/MONAI/blob/dev/monai/transforms/intensity/array.py#L605
+    # Copyright (c) MONAI Consortium
+    # Licensed under the Apache License, Version 2.0 (the "License")
+    Required Keys:
+    - img
+    Modified Keys:
+    - img
+    Args:
+        mean (float, optional): the mean to subtract by
+            Defaults to None.
+        std (float, optional): the standard deviation to divide by
+            Defaults to None.
+        nonzero: whether only normalize non-zero values
+            Defaults to False.
+        channel_wise (bool): whether perform channel-wise znormalization
+            Defaults to False.
+    """
+
+    def __init__(self,
+                 mean: Optional[Union[float, Iterable[float]]] = None,
+                 std: Optional[Union[float, Iterable[float]]] = None,
+                 nonzero: bool = False,
+                 channel_wise: bool = False) -> None:
+        self.mean = mean
+        self.std = std
+        self.nonzero = nonzero
+        self.channel_wise = channel_wise
+
+    def _normalize(self, img: np.ndarray, mean=None, std=None):
+        if self.nonzero:
+            slices = img != 0
+        else:
+            slices = np.ones_like(img, dtype=bool)
+
+        if not slices.any():
+            return img
+
+        _mean = mean if mean is not None else np.mean(img[slices])
+        _std = std if std is not None else np.std(img[slices])
+
+        if np.isscalar(_std):
+            if _std == 0.0:
+                _std = 1.0
+        else:
+            _std = _std[slices]
+            _std[_std == 0.0] = 1.0
+
+        img[slices] = (img[slices] - _mean) / _std
+        return img
+
+    def znorm(self, img):
+        if self.channel_wise:
+            if self.mean is not None and len(self.mean) != len(img):
+                err_str = (f'img has {len(img)} channels, '
+                           f'but mean has {len(self.mean)}.')
+                raise ValueError(err_str)
+            if self.std is not None and len(self.std) != len(img):
+                err_str = (f'img has {len(img)} channels, '
+                           f'but std has {len(self.std)}.')
+                raise ValueError(err_str)
+
+            for i, d in enumerate(img):
+                img[i] = self._normalize(
+                    d,
+                    mean=self.mean[i] if self.mean is not None else None,
+                    std=self.std[i] if self.std is not None else None,
+                )
+        else:
+            img = self._normalize(img, self.mean, self.std)
+
+        return img
+
+    def transform(self, results: dict) -> dict:
+        img = results['img']
+        img = self.znorm(img)
+        results['img'] = img
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(mean={self.mean}, '
+        repr_str += f'std={self.std}, '
+        repr_str += f'channel_wise={self.channel_wise})'
+        return
+
+@TRANSFORMS.register_module()
+class RandomRotFlip(BaseTransform):
+    """Rotate and flip the image & seg or just rotate the image & seg.
+    Required Keys:
+    - img
+    - gt_seg_map
+    Modified Keys:
+    - img
+    - gt_seg_map
+    Args:
+        rotate_prob (float): The probability of rotate image.
+        flip_prob (float): The probability of rotate&flip image.
+        degree (float, tuple[float]): Range of degrees to select from. If
+            degree is a number instead of tuple like (min, max),
+            the range of degree will be (``-degree``, ``+degree``)
+    """
+
+    def __init__(self, rotate_prob=0.5, flip_prob=0.5, degree=(-20, 20)):
+        self.rotate_prob = rotate_prob
+        self.flip_prob = flip_prob
+        assert 0 <= rotate_prob <= 1 and 0 <= flip_prob <= 1
+        if isinstance(degree, (float, int)):
+            assert degree > 0, f'degree {degree} should be positive'
+            self.degree = (-degree, degree)
+        else:
+            self.degree = degree
+        assert len(self.degree) == 2, f'degree {self.degree} should be a ' \
+                                      f'tuple of (min, max)'
+
+    def random_rot_flip(self, results: dict) -> dict:
+        k = np.random.randint(0, 4)
+        results['img'] = np.rot90(results['img'], k)
+        for key in results.get('seg_fields', []):
+            results[key] = np.rot90(results[key], k)
+        axis = np.random.randint(0, 2)
+        results['img'] = np.flip(results['img'], axis=axis).copy()
+        for key in results.get('seg_fields', []):
+            results[key] = np.flip(results[key], axis=axis).copy()
+        return results
+
+    def random_rotate(self, results: dict) -> dict:
+        angle = np.random.uniform(min(*self.degree), max(*self.degree))
+        results['img'] = mmcv.imrotate(results['img'], angle=angle)
+        for key in results.get('seg_fields', []):
+            results[key] = mmcv.imrotate(results[key], angle=angle)
+        return results
+
+    def transform(self, results: dict) -> dict:
+        """Call function to rotate or rotate & flip image, semantic
+        segmentation maps.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Rotated or rotated & flipped results.
+        """
+        rotate_flag = 0
+        if random.random() < self.rotate_prob:
+            results = self.random_rotate(results)
+            rotate_flag = 1
+        if random.random() < self.flip_prob and rotate_flag == 0:
+            results = self.random_rot_flip(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(rotate_prob={self.rotate_prob}, ' \
+                    f'flip_prob={self.flip_prob}, ' \
+                    f'degree={self.degree})'
+        return repr_str
+
+
+@TRANSFORMS.register_module()
+class MedicalRandomFlip(BaseTransform):
+    """Reverse the orders of elements in an 3D Medical image & gt_seg_map along
+    a given axe.
+    Required Keys:
+    - img
+    - gt_seg_map
+    Modified Keys:
+    - img
+    - gt_seg_map
+    Added Keys:
+    - flip
+    - flip_direction
+    - swap_seg_labels (optional)
+    Args:
+        prob (float | list[float]): The flipping probability. Defaults to None.
+        direction (int, list[int]): The flipping direction (Spatial axes along
+            which to flip over).
+        swap_seg_labels (list, optional): The label pair need to be swapped
+            for ground truth, like 'left arm' and 'right arm' need to be
+            swapped after horizontal flipping. For example, ``[(1, 5)]``,
+            where 1/5 is the label of the left/right arm. Defaults to None.
+    """
+
+    def __init__(self,
+                 prob: Optional[Union[float, Iterable[float]]] = None,
+                 direction: Optional[Union[Sequence[int], int]] = None,
+                 swap_seg_labels: Optional[Sequence] = None) -> None:
+        if isinstance(prob, list):
+            assert is_list_of(prob, float)
+            assert 0 <= sum(prob) <= 1
+        elif isinstance(prob, float):
+            assert 0 <= prob <= 1
+        else:
+            raise ValueError(
+                f'probs must be float or list, but got `{type(prob)}`.')
+        self.prob = prob
+        self.swap_seg_labels = swap_seg_labels
+
+        if isinstance(direction, int):
+            pass
+        elif isinstance(direction, list):
+            assert is_list_of(direction, int)
+        else:
+            raise ValueError(f'direction must be either int or list of int, \
+                               but got `{type(direction)}`.')
+        self.direction = direction
+
+    def _choose_direction(self) -> int:
+        """Choose the flip direction according to `prob` and `direction`"""
+        if isinstance(self.direction,
+                      Sequence) and not isinstance(self.direction, int):
+            # None means non-flip
+            direction_list: list = list(self.direction) + [None]
+        elif isinstance(self.direction, int):
+            # None means non-flip
+            direction_list = [self.direction, None]
+
+        if isinstance(self.prob, list):
+            non_prob: float = 1 - sum(self.prob)
+            prob_list = self.prob + [non_prob]
+        elif isinstance(self.prob, float):
+            non_prob = 1. - self.prob
+            # exclude non-flip
+            single_ratio = self.prob / (len(direction_list) - 1)
+            prob_list = [single_ratio] * (len(direction_list) - 1) + [non_prob]
+
+        cur_dir = np.random.choice(direction_list, p=prob_list)
+
+        return cur_dir
+
+    def _flip_seg_map(self, seg_map: dict, direction: int) -> np.ndarray:
+        """
+        Args:
+            seg_map (ndarray): segmentation map, shape (Z, Y, X)
+            direction (int): Flip direction. Options are '0' , '1', '2'
+        Returns:
+            numpy.ndarray: Flipped segmentation map.
+        """
+        seg_map = np.flip(seg_map, direction)
+        if self.swap_seg_labels is not None:
+            # to handle datasets with left/right annotations
+            # like 'Left-arm' and 'Right-arm' in LIP dataset
+            # Modified from https://github.com/openseg-group/openseg.pytorch/blob/master/lib/datasets/tools/cv2_aug_transforms.py # noqa:E501
+            # Licensed under MIT license
+            temp = seg_map.copy()
+            assert isinstance(self.swap_seg_labels, (tuple, list))
+            for pair in self.swap_seg_labels:
+                assert isinstance(pair, (tuple, list)) and len(pair) == 2, \
+                    'swap_seg_labels must be a sequence with pair, but got ' \
+                    f'{self.swap_seg_labels}.'
+                seg_map[temp == pair[0]] = pair[1]
+                seg_map[temp == pair[1]] = pair[0]
+
+        return seg_map
+
+    def _flip(self, results: dict) -> None:
+        """Flip images and segmentation map."""
+        # flip image
+        results['img'] = np.flip(results['img'], results['flip_direction'] + 1)
+        results['gt_seg_map'] = self._flip_seg_map(
+            results['gt_seg_map'], direction=results['flip_direction'])
+        results['swap_seg_labels'] = self.swap_seg_labels
+
+    def _flip_on_direction(self, results: dict) -> None:
+        """Function to flip images and segmentation map."""
+        cur_dir = self._choose_direction()
+        if cur_dir is None:
+            results['flip'] = False
+            results['flip_direction'] = None
+        else:
+            results['flip'] = True
+            results['flip_direction'] = cur_dir
+            self._flip(results)
+
+    def transform(self, results: dict) -> dict:
+        """Transform function to flip images, bounding boxes, semantic
+        segmentation map and keypoints.
+        Args:
+            results (dict): Result dict from loading pipeline.
+        Returns:
+            dict: Flipped results, 'img', 'gt_seg_map', 'flip',
+            and 'flip_direction' keys are updated in result dict.
+        """
+        self._flip_on_direction(results)
+
+        return results
+
+    def __repr__(self) -> str:
+        repr_str = self.__class__.__name__
+        repr_str += f'(prob={self.prob}, '
+        repr_str += f'direction={self.direction})'
+
+        return repr_str
 
 @TRANSFORMS.register_module()
 class RandomRotate(BaseTransform):

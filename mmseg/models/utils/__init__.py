@@ -1,8 +1,10 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+from .basic_block import BasicBlock, Bottleneck
 from .embed import PatchEmbed
 from .encoding import Encoding
 from .inverted_residual import InvertedResidual, InvertedResidualV3
 from .make_divisible import make_divisible
+from .ppm import DAPPM, PAPPM
 from .res_layer import ResLayer
 from .se_layer import SELayer
 from .self_attention_block import SelfAttentionBlock
@@ -13,10 +15,11 @@ from .wrappers import Upsample, resize
 
 from .cbam import CBAM
 from .PSA import PSA_p
-from .ex_attention import EX_Module
+from .ex_attention import EX_Module, EX_Module_3D
 __all__ = [
     'ResLayer', 'SelfAttentionBlock', 'make_divisible', 'InvertedResidual',
     'UpConvBlock', 'InvertedResidualV3', 'SELayer', 'PatchEmbed',
     'nchw_to_nlc', 'nlc_to_nchw', 'nchw2nlc2nchw', 'nlc2nchw2nlc', 'Encoding',
-    'Upsample', 'resize'
+    'Upsample', 'resize', 'CBAM', 'PSA_p', 'EX_Module', 'DAPPM', 'PAPPM',
+    'BasicBlock', 'Bottleneck'
 ]
