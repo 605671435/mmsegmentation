@@ -1,5 +1,5 @@
 dataset_type = 'SynapseDataset'
-data_root = 'data/synapse/'
+data_root = 'data/synapse_2023/'
 img_scale = (512, 512)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
@@ -37,5 +37,9 @@ val_dataloader = dict(
         pipeline=test_pipeline))
 test_dataloader = val_dataloader
 
-val_evaluator = dict(type='IoUMetric', iou_metrics=['mIoU'])
-test_evaluator = val_evaluator
+val_evaluator = dict(type='PerCaseMetric', iou_metrics=['mIoU'])
+test_evaluator = dict(type='PerCaseMetric',
+                       iou_metrics=['mDice'],
+                       hd_metric=True,
+                       spacing_path='/root/mmsegmentation/data/synapse_2023/spacing.txt',
+                       prefix='percase')
