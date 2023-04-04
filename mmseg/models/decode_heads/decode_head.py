@@ -101,6 +101,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
                      loss_weight=1.0),
                  ignore_index=255,
                  sampler=None,
+                 resize_mode='bilinear',
                  align_corners=False,
                  init_cfg=dict(
                      type='Normal', std=0.01, override=dict(name='conv_seg'))):
@@ -114,6 +115,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         self.in_index = in_index
 
         self.ignore_index = ignore_index
+        self.resize_mode = resize_mode
         self.align_corners = align_corners
 
         if out_channels is None:
@@ -231,7 +233,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
                 resize(
                     input=x,
                     size=inputs[0].shape[2:],
-                    mode='bilinear',
+                    mode=self.resize_mode,
                     align_corners=self.align_corners) for x in inputs
             ]
             inputs = torch.cat(upsampled_inputs, dim=1)
@@ -332,7 +334,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             seg_logits = resize(
                 input=seg_logits,
                 size=seg_label.shape[2:],
-                mode='bilinear',
+                mode=self.resize_mode,
                 align_corners=self.align_corners)
 
         loss = dict()
@@ -387,6 +389,6 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             seg_logits = resize(
                 input=seg_logits,
                 size=batch_img_metas[0]['img_shape'],
-                mode='bilinear',
+                mode=self.resize_mode,
                 align_corners=self.align_corners)
         return seg_logits

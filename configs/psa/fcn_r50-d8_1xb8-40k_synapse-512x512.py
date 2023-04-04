@@ -8,8 +8,12 @@ data_preprocessor = dict(size=crop_size)
 model = dict(
     data_preprocessor=data_preprocessor,
     pretrained=None,
-    decode_head=dict(num_classes=14),
-    auxiliary_head=dict(num_classes=14),
+    decode_head=dict(num_classes=14,
+                     resize_mode='nearest',
+                     align_corners=None),
+    auxiliary_head=dict(num_classes=14,
+                        resize_mode='nearest',
+                        align_corners=None),
     test_cfg=dict(mode='whole')
 )
 
@@ -31,12 +35,12 @@ val_dataloader = dict(batch_size=1, num_workers=4)
 test_dataloader = val_dataloader
 
 default_hooks = dict(
-    visualization=dict(type='SegVisualizationHook', draw_table=True, interval=50),
-    checkpoint=dict(type='CheckpointHook',
-                      by_epoch=False,
-                      interval=4000,
-                      max_keep_ckpts=1,
-                      save_best=['mIoU'], rule='greater'))
+    visualization=dict(type='SegVisualizationHook', draw_table=False, interval=50),
+    checkpoint=dict(type='MyCheckpointHook',
+                    by_epoch=False,
+                    interval=4000,
+                    max_keep_ckpts=1,
+                    save_best=['mIoU'], rule='greater'))
 
 vis_backends = [
     dict(type='LocalVisBackend'),
@@ -49,6 +53,7 @@ vis_backends = [
 visualizer = dict(
     type='SegLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 
+env_cfg = dict(cudnn_benchmark=False)
 randomness = dict(seed=50000000,
-                  deterministic=False,
+                  deterministic=True,
                   diff_rank_seed=False)

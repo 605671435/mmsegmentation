@@ -134,11 +134,12 @@ class PerCaseMetric(BaseMetric):
                     if pred.sum() > 0 and gt.sum() > 0:
                         cur_hd = hd95(pred, gt, voxelspacing=dict_spacing['img' + uniq_case[i]])
                         # cur_hd = np.random.randint(low=0, high=100, size=1)[0]
-                    elif pred.sum() == 0 and gt.sum() == 0:
-                        cur_hd = np.nan
+                    # elif pred.sum() == 0 and gt.sum() == 0:
                     else:
-                        inf = np.sum(np.array(cur_pre.shape) * np.array(dict_spacing['img' + uniq_case[i]]))
-                        cur_hd = inf
+                        cur_hd = np.nan
+                    # else:
+                    #     inf = np.sum(np.array(cur_pre.shape) * np.array(dict_spacing['img' + uniq_case[i]]))
+                    #     cur_hd = inf
                     per_hd_metrics.append(cur_hd)
 
                     hd_elapsed = hd_time.since_start()

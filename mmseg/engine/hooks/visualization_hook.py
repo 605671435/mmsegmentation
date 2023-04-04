@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os.path as osp
 import warnings
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Dict
 
 from PIL import Image
 import SimpleITK as sitk
@@ -148,7 +148,7 @@ class SegVisualizationHook(Hook):
             area_union = area_pred_label + area_label - area_intersect
             iou = area_intersect / area_union
 
-            return np.round(iou.numpy() * 100, 2)
+            return np.round(iou.numpy() * 100, 2), np.round(np.nanmean(iou.numpy()) * 100, 2)
 
         dice = 2 * area_intersect / (
                 area_pred_label + area_label)
@@ -174,7 +174,7 @@ class SegVisualizationHook(Hook):
             self.num_classes = len(self.class_info)
 
             if self.draw_table is True:
-                columns = ["id", "iter", "image", "gt", "pred"]
+                columns = ["id", "iter", "image", "gt", "pred", "miou"]
                 columns.extend(["%_" + c for c in self.class_info])
                 print_log('Create a wandb table.', logger)
                 self.test_table = self.wandb.Table(columns=columns)
@@ -253,7 +253,7 @@ class SegVisualizationHook(Hook):
                                                  backend='pillow')
 
                     if metric == 'mIoU':
-                        metric = self.compute_metric(outputs[0].pred_sem_seg.data,
+                        metric, miou = self.compute_metric(outputs[0].pred_sem_seg.data,
                                                     outputs[0].gt_sem_seg.data,
                                                     self.num_classes,
                                                     metric)
@@ -269,7 +269,7 @@ class SegVisualizationHook(Hook):
                     logger: MMLogger = MMLogger.get_current_instance()
                     print_log('Add data to wandb table.', logger)
 
-                    row = [img_path, runner.iter, self.wandb.Image(ori_img), annotated, predicted]
+                    row = [img_path, runner.iter, self.wandb.Image(ori_img), annotated, predicted, miou]
                     row.extend(metric)
 
                     self.test_table.add_data(*row)
@@ -280,10 +280,11 @@ class SegVisualizationHook(Hook):
                        batch_idx: int,
                        data_batch: dict,
                        outputs) -> None:
-        self.add_data(runner,
-                 batch_idx,
-                 data_batch,
-                 outputs)
+        if self.draw_table is True or self.draw_ct is True:
+            self.add_data(runner,
+                     batch_idx,
+                     data_batch,
+                     outputs)
 
     @master_only
     def after_test_iter(self,
@@ -291,10 +292,12 @@ class SegVisualizationHook(Hook):
                         batch_idx: int,
                         data_batch: dict,
                         outputs) -> None:
-        self.add_data(runner,
-                 batch_idx,
-                 data_batch,
-                 outputs)
+        if self.draw_table is True or self.draw_ct is True:
+            self.add_data(runner,
+                     batch_idx,
+                     data_batch,
+                     outputs)
+
     @master_only
     def after_run(self, runner) -> None:
         if self.draw_table is True or self.draw_ct is True:
